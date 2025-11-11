@@ -1,8 +1,10 @@
 package co.edu.unbosque.veterinaria.entity;
 
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.*;
 
+@JsonIgnoreProperties({"hibernateLazyInitializer","handler"})
 @Entity
 @Table(name = "Adoptante")
 @Data @NoArgsConstructor @AllArgsConstructor @Builder

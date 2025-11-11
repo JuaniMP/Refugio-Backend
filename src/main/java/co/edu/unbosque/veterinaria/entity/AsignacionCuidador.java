@@ -9,6 +9,7 @@ import java.time.LocalDate;
 @Data @NoArgsConstructor @AllArgsConstructor @Builder
 @IdClass(AsignacionCuidadorId.class)
 public class AsignacionCuidador {
+
     @Id
     @Column(name = "id_mascota")
     private Integer idMascota;

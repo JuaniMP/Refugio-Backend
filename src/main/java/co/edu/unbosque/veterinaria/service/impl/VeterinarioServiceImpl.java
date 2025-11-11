@@ -9,12 +9,14 @@ import org.springframework.data.repository.CrudRepository;
 import org.springframework.stereotype.Service;
 
 @Service
-public class VeterinarioServiceImpl extends GenericServiceImpl<Veterinario, Long> implements VeterinarioServiceAPI {
+public class VeterinarioServiceImpl extends GenericServiceImpl<Veterinario, Integer>
+        implements VeterinarioServiceAPI {
+
     @Autowired
     private VeterinarioRepository veterinarioRepository;
 
     @Override
-    public CrudRepository<Veterinario, Long> getDao() {
+    public CrudRepository<Veterinario, Integer> getDao() {
         return veterinarioRepository;
     }
 }

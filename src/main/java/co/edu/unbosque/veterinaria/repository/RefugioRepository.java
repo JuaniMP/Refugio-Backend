@@ -5,5 +5,4 @@ import org.springframework.data.repository.CrudRepository;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface RefugioRepository extends CrudRepository<Refugio, Long> {
-}
+public interface RefugioRepository extends CrudRepository<Refugio, Integer> { }
