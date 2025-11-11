@@ -9,12 +9,13 @@ import org.springframework.data.repository.CrudRepository;
 import org.springframework.stereotype.Service;
 
 @Service
-public class RefugioServiceImpl extends GenericServiceImpl<Refugio, Long> implements RefugioServiceAPI {
+public class RefugioServiceImpl extends GenericServiceImpl<Refugio, Integer> implements RefugioServiceAPI {
+
     @Autowired
     private RefugioRepository refugioRepository;
 
     @Override
-    public CrudRepository<Refugio, Long> getDao() {
+    public CrudRepository<Refugio, Integer> getDao() {
         return refugioRepository;
     }
 }
