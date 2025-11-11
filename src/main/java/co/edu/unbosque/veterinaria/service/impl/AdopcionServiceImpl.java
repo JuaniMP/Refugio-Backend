@@ -9,12 +9,13 @@ import org.springframework.data.repository.CrudRepository;
 import org.springframework.stereotype.Service;
 
 @Service
-public class AdopcionServiceImpl extends GenericServiceImpl<Adopcion, Long> implements AdopcionServiceAPI {
+public class AdopcionServiceImpl extends GenericServiceImpl<Adopcion, Integer> implements AdopcionServiceAPI {
+
     @Autowired
     private AdopcionRepository adopcionRepository;
 
     @Override
-    public CrudRepository<Adopcion, Long> getDao() {
+    public CrudRepository<Adopcion, Integer> getDao() {
         return adopcionRepository;
     }
 }

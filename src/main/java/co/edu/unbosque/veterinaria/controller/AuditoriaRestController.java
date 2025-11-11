@@ -5,6 +5,7 @@ import co.edu.unbosque.veterinaria.service.api.AuditoriaServiceAPI;
 import co.edu.unbosque.veterinaria.utils.ResourceNotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+
 import java.util.List;
 
 @CrossOrigin(origins = "*")
@@ -12,20 +13,30 @@ import java.util.List;
 @RequestMapping("/api/auditorias")
 public class AuditoriaRestController {
 
-    @Autowired private AuditoriaServiceAPI service;
+    @Autowired
+    private AuditoriaServiceAPI service;
 
+    // listar todas las auditorias
     @GetMapping("/getAll")
-    public List<Auditoria> getAll() { return service.getAll(); }
+    public List<Auditoria> getAll() {
+        return service.getAll();
+    }
 
+    // obtener una auditoria por id
     @GetMapping("/{id}")
-    public Auditoria get(@PathVariable Long id) throws ResourceNotFoundException {
+    public Auditoria get(@PathVariable Integer id) throws ResourceNotFoundException {
         Auditoria a = service.get(id);
-        if (a == null) throw new ResourceNotFoundException("Auditoría no encontrada: " + id);
+        if (a == null) {
+            throw new ResourceNotFoundException("auditoria no encontrada: " + id);
+        }
         return a;
     }
 
+    // opcional: permitir crear auditorias manuales
     @PostMapping("/save")
-    public Auditoria save(@RequestBody Auditoria a) { return service.save(a); }
+    public Auditoria save(@RequestBody Auditoria a) {
+        return service.save(a);
+    }
 
-    // Sin delete
+    // no hay delete, las auditorias no se borran
 }

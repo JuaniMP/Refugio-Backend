@@ -5,5 +5,4 @@ import org.springframework.data.repository.CrudRepository;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface DiagnosticoRepository extends CrudRepository<Diagnostico, Long> {
-}
+public interface DiagnosticoRepository extends CrudRepository<Diagnostico, Integer> { }

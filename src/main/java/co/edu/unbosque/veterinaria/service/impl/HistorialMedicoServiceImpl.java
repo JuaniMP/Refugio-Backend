@@ -9,14 +9,14 @@ import org.springframework.data.repository.CrudRepository;
 import org.springframework.stereotype.Service;
 
 @Service
-public class HistorialMedicoServiceImpl extends GenericServiceImpl<HistorialMedico, Long>
+public class HistorialMedicoServiceImpl extends GenericServiceImpl<HistorialMedico, Integer>
         implements HistorialMedicoServiceAPI {
 
     @Autowired
     private HistorialMedicoRepository historialMedicoRepository;
 
     @Override
-    public CrudRepository<HistorialMedico, Long> getDao() {
+    public CrudRepository<HistorialMedico, Integer> getDao() {
         return historialMedicoRepository;
     }
 }

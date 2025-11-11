@@ -6,12 +6,16 @@ import java.time.Instant;
 
 @Entity
 @Table(name = "Auditoria")
-@Data @NoArgsConstructor @AllArgsConstructor @Builder
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class Auditoria {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id_auditoria")
-    private Long idAuditoria;
+    private Integer idAuditoria;
 
     @ManyToOne
     @JoinColumn(name = "id_usuario")
@@ -27,8 +31,8 @@ public class Auditoria {
     @Column(name = "accion", nullable = false, length = 10)
     private Accion accion;
 
-    @Column(name = "detalle_json", columnDefinition = "json")
-    private String detalleJson;
+    @Column(name = "comentario_auditoria", length = 255)
+    private String comentarioAuditoria;
 
     @Column(name = "creado_en", insertable = false, updatable = false)
     private Instant creadoEn;

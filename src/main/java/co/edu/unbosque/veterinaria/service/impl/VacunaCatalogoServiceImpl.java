@@ -9,14 +9,14 @@ import org.springframework.data.repository.CrudRepository;
 import org.springframework.stereotype.Service;
 
 @Service
-public class VacunaCatalogoServiceImpl extends GenericServiceImpl<VacunaCatalogo, Long>
+public class VacunaCatalogoServiceImpl extends GenericServiceImpl<VacunaCatalogo, Integer>
         implements VacunaCatalogoServiceAPI {
 
     @Autowired
     private VacunaCatalogoRepository vacunaCatalogoRepository;
 
     @Override
-    public CrudRepository<VacunaCatalogo, Long> getDao() {
+    public CrudRepository<VacunaCatalogo, Integer> getDao() {
         return vacunaCatalogoRepository;
     }
 }
