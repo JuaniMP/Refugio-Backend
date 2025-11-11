@@ -9,12 +9,13 @@ import org.springframework.data.repository.CrudRepository;
 import org.springframework.stereotype.Service;
 
 @Service
-public class AuditoriaServiceImpl extends GenericServiceImpl<Auditoria, Long> implements AuditoriaServiceAPI {
+public class AuditoriaServiceImpl extends GenericServiceImpl<Auditoria, Integer> implements AuditoriaServiceAPI {
+
     @Autowired
     private AuditoriaRepository auditoriaRepository;
 
     @Override
-    public CrudRepository<Auditoria, Long> getDao() {
+    public CrudRepository<Auditoria, Integer> getDao() {
         return auditoriaRepository;
     }
 }

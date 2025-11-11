@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 @Table(name = "Solicitud_Adopcion")
 @Data @NoArgsConstructor @AllArgsConstructor @Builder
 public class SolicitudAdopcion {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id_solicitud")
@@ -31,5 +32,7 @@ public class SolicitudAdopcion {
     @Column(name = "observaciones", columnDefinition = "text")
     private String observaciones;
 
-    public enum Estado { PENDIENTE, APROBADA, RECHAZADA, CANCELADA }
+    public enum Estado {
+        PENDIENTE, APROBADA, RECHAZADA, CANCELADA
+    }
 }

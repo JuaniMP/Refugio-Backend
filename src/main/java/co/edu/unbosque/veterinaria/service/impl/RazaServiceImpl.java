@@ -9,12 +9,13 @@ import org.springframework.data.repository.CrudRepository;
 import org.springframework.stereotype.Service;
 
 @Service
-public class RazaServiceImpl extends GenericServiceImpl<Raza, Long> implements RazaServiceAPI {
+public class RazaServiceImpl extends GenericServiceImpl<Raza, Integer> implements RazaServiceAPI {
+
     @Autowired
     private RazaRepository razaRepository;
 
     @Override
-    public CrudRepository<Raza, Long> getDao() {
+    public CrudRepository<Raza, Integer> getDao() {
         return razaRepository;
     }
 }

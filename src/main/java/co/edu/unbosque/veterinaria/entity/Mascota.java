@@ -1,42 +1,49 @@
 package co.edu.unbosque.veterinaria.entity;
 
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.*;
 
+@JsonIgnoreProperties({"hibernateLazyInitializer","handler"})
 @Entity
 @Table(name = "Mascota")
-@Data @NoArgsConstructor @AllArgsConstructor @Builder
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class Mascota {
+
+    public enum Sexo { M, F, DESCONOCIDO }
+    public enum Estado { EN_REFUGIO, EN_PROCESO_ADOPCION, ADOPTADA, OTRO }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id_mascota")
     private Integer idMascota;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_refugio", nullable = false)
+    private Refugio refugio;
+
+    // OJO: la especie se deduce por la raza. La tabla Mascota NO tiene id_especie
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_raza", nullable = false)
+    private Raza raza;
+
     @Column(name = "nombre", length = 80, nullable = false)
     private String nombre;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "sexo", length = 12)
-    private Sexo sexo = Sexo.DESCONOCIDO;
+    @Column(name = "sexo")
+    private Sexo sexo; // valores: M, F, DESCONOCIDO
 
     @Column(name = "edad_meses")
     private Integer edadMeses;
 
-    @ManyToOne
-    @JoinColumn(name = "id_raza", nullable = false)
-    private Raza raza;
-
-    @ManyToOne
-    @JoinColumn(name = "id_refugio", nullable = false)
-    private Refugio refugio;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "estado", length = 20)
-    private Estado estado = Estado.EN_REFUGIO;
-
     @Column(name = "img", length = 100)
     private String img;
 
-    public enum Sexo { M, F, DESCONOCIDO }
-    public enum Estado { EN_REFUGIO, EN_PROCESO_ADOPCION, ADOPTADA, OTRO }
+    @Enumerated(EnumType.STRING)
+    @Column(name = "estado", length = 25)
+    private Estado estado; // EN_REFUGIO, EN_PROCESO_ADOPCION, ADOPTADA, OTRO
 }

@@ -3,4 +3,4 @@ package co.edu.unbosque.veterinaria.service.api;
 import co.edu.unbosque.veterinaria.entity.Refugio;
 import co.edu.unbosque.veterinaria.utils.GenericServiceAPI;
 
-public interface RefugioServiceAPI extends GenericServiceAPI<Refugio, Long> { }
+public interface RefugioServiceAPI extends GenericServiceAPI<Refugio, Integer> { }

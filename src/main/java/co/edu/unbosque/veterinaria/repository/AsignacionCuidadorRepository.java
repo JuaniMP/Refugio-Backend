@@ -6,5 +6,4 @@ import org.springframework.data.repository.CrudRepository;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface AsignacionCuidadorRepository extends CrudRepository<AsignacionCuidador, AsignacionCuidadorId> {
-}
+public interface AsignacionCuidadorRepository extends CrudRepository<AsignacionCuidador, AsignacionCuidadorId> { }

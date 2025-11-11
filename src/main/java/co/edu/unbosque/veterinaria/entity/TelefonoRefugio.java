@@ -8,6 +8,7 @@ import lombok.*;
 @Data @NoArgsConstructor @AllArgsConstructor @Builder
 @IdClass(TelefonoRefugioId.class)
 public class TelefonoRefugio {
+
     @Id
     @Column(name = "id_refugio")
     private Integer idRefugio;

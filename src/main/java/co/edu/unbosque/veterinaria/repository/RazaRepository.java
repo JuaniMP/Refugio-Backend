@@ -5,5 +5,4 @@ import org.springframework.data.repository.CrudRepository;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface RazaRepository extends CrudRepository<Raza, Long> {
-}
+public interface RazaRepository extends CrudRepository<Raza, Integer> { }
