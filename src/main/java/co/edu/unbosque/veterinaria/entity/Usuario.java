@@ -6,8 +6,12 @@ import java.time.Instant;
 
 @Entity
 @Table(name = "Usuario")
-@Data @NoArgsConstructor @AllArgsConstructor @Builder
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class Usuario {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id_usuario")
@@ -20,11 +24,26 @@ public class Usuario {
     private String passwordHash;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "rol", nullable = false, length = 2)
+    private Rol rol; // AD, V, C, AP
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "estado", nullable = false, length = 10)
     private Estado estado = Estado.ACTIVO;
 
     @Column(name = "creado_en", insertable = false, updatable = false)
     private Instant creadoEn;
 
-    public enum Estado { ACTIVO, INACTIVO }
+    public enum Estado {
+        ACTIVO,
+        INACTIVO
+    }
+
+    public enum Rol {
+        AD,  // Administrador
+        V,   // Veterinario
+        C,   // Cuidador
+        AP   // Adoptante
+    }
 }
+
