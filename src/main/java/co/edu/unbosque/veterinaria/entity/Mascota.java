@@ -34,6 +34,9 @@ public class Mascota {
     @Column(name = "estado", length = 20)
     private Estado estado = Estado.EN_REFUGIO;
 
+    @Column(name = "img", length = 100)
+    private String img;
+
     public enum Sexo { M, F, DESCONOCIDO }
     public enum Estado { EN_REFUGIO, EN_PROCESO_ADOPCION, ADOPTADA, OTRO }
 }
