@@ -6,7 +6,7 @@ import lombok.*;
 @Entity
 @Table(name = "Telefono_Refugio")
 @Data @NoArgsConstructor @AllArgsConstructor @Builder
-@IdClass(TelefonoRefugioId.class)
+@IdClass(TelefonoRefugioId.class) // <-- Esta línea usa el archivo que tú pegaste
 public class TelefonoRefugio {
 
     @Id
@@ -16,4 +16,10 @@ public class TelefonoRefugio {
     @Id
     @Column(name = "telefono", length = 30)
     private String telefono;
+
+    // --- CAMPO AÑADIDO ---
+    // Columna para el estado "ACTIVO" o "INACTIVO"
+    @Column(name = "estado", length = 10, nullable = false)
+    @Builder.Default // Asegura que el valor por defecto se use con @Builder
+    private String estado = "ACTIVO";
 }
