@@ -12,7 +12,7 @@ public class Cuidador {
     @Column(name = "id_empleado")
     private Integer idEmpleado;
 
-    @OneToOne(fetch = FetchType.LAZY) // sin cascade = PERSIST/ALL
+    @OneToOne(fetch = FetchType.EAGER) // sin cascade = PERSIST/ALL
     @MapsId
     @JoinColumn(name = "id_empleado")
     private Empleado empleado;
