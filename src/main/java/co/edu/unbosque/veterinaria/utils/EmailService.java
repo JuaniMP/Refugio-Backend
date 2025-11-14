@@ -47,4 +47,21 @@ public class EmailService {
 
         mailSender.send(message);
     }
+
+    /**
+     * Envía una contraseña temporal a un nuevo empleado (Vet/Cuidador).
+     */
+    public void sendTemporaryPasswordEmail(String toEmail, String tempPassword) {
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromEmail);
+        message.setTo(toEmail);
+        message.setSubject("Bienvenido a bordo - Tu cuenta de Bigotes Felices");
+        message.setText("¡Hola!\n\n" +
+                "Se ha creado una cuenta de empleado para ti en la plataforma de Bigotes Felices.\n\n" +
+                "Tu correo de inicio de sesión es: " + toEmail + "\n" +
+                "Tu contraseña temporal es: " + tempPassword + "\n\n" +
+                "Por favor, inicia sesión y cambia tu contraseña inmediatamente.");
+
+        mailSender.send(message);
+    }
 }
