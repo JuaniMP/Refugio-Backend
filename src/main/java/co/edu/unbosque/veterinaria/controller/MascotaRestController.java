@@ -102,6 +102,35 @@ public class MascotaRestController {
         }
     }
 
+    @GetMapping("/by-zona")
+    public ResponseEntity<?> getMascotasPorZona(
+            @RequestParam String zona,
+            @RequestHeader("Authorization") String authHeader) {
+
+        // (Validación de Token simple)
+        Usuario actor = getActorFromToken(authHeader); // Re-usa tu helper de auditoría
+        if (actor == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token inválido.");
+        }
+        // (Validación de Rol)
+        if (actor.getRol() == Usuario.Rol.AP) { // Un adoptante no puede usar esto
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Acceso denegado.");
+        }
+
+        List<Mascota> mascotas = service.findByZonaAsignada(zona);
+        return ResponseEntity.ok(mascotas);
+    }
+    private Usuario getActorFromToken(String authHeader) {
+        try {
+            String token = authHeader.substring(7); // Quita "Bearer "
+            String login = jwtUtil.getLoginFromToken(token);
+            Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
+            return usuarioOpt.orElse(null);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     // --- 10. HELPER DE AUDITORÍA ACTUALIZADO ---
     private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Auditoria.Accion accion, String comentario) {
         Usuario actor = null;

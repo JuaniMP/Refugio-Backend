@@ -4,20 +4,28 @@ import co.edu.unbosque.veterinaria.entity.AsignacionCuidador;
 import co.edu.unbosque.veterinaria.entity.AsignacionCuidadorId;
 import co.edu.unbosque.veterinaria.entity.Auditoria;
 import co.edu.unbosque.veterinaria.entity.Auditoria.Accion;
-import co.edu.unbosque.veterinaria.entity.Usuario; // <-- 1. IMPORTAR
+import co.edu.unbosque.veterinaria.entity.Usuario;
+import co.edu.unbosque.veterinaria.entity.Cuidador;
+import co.edu.unbosque.veterinaria.entity.Mascota;
 import co.edu.unbosque.veterinaria.service.api.AsignacionCuidadorServiceAPI;
 import co.edu.unbosque.veterinaria.service.api.AuditoriaServiceAPI;
-import co.edu.unbosque.veterinaria.service.api.UsuarioServiceAPI; // <-- 2. IMPORTAR
-import co.edu.unbosque.veterinaria.utils.JwtUtil; // <-- 3. IMPORTAR
+import co.edu.unbosque.veterinaria.service.api.CuidadorServiceAPI;
+import co.edu.unbosque.veterinaria.service.api.MascotaServiceAPI;
+import co.edu.unbosque.veterinaria.service.api.UsuarioServiceAPI;
+import co.edu.unbosque.veterinaria.utils.JwtUtil;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.*;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional; // <-- 4. IMPORTAR
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors; // <-- AÑADIR IMPORT
 
 @CrossOrigin(origins = "*")
 @RestController
@@ -26,105 +34,192 @@ public class AsignacionCuidadorRestController {
 
     @Autowired private AsignacionCuidadorServiceAPI service;
     @Autowired private AuditoriaServiceAPI auditoriaService;
-
-    // --- 5. DEPENDENCIAS AÑADIDAS ---
     @Autowired private JwtUtil jwtUtil;
     @Autowired private UsuarioServiceAPI usuarioService;
 
+    @Autowired private CuidadorServiceAPI cuidadorService;
+    @Autowired private MascotaServiceAPI mascotaService;
 
-    // ... (getAll sin cambios) ...
+
     @GetMapping("/getAll")
     public List<AsignacionCuidador> getAll() {
         return service.getAll();
     }
 
+    // ===============================================
+    // --- ENDPOINTS DE TURNO CORREGIDOS ---
+    // ===============================================
 
-    // --- 6. MÉTODO 'save' ACTUALIZADO ---
-    @PostMapping("/save")
-    public ResponseEntity<?> save(@RequestBody AsignacionCuidador a,
-                                  @RequestHeader("Authorization") String authHeader) { // <-- AÑADIDO
-
-        // ... (validaciones existentes sin cambios) ...
-        if (a.getIdMascota() == null || a.getIdEmpleado() == null || a.getFechaInicio() == null) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body("debes enviar idMascota, idEmpleado y fechaInicio");
-        }
-        AsignacionCuidadorId id = new AsignacionCuidadorId(a.getIdMascota(), a.getIdEmpleado(), a.getFechaInicio());
-        AsignacionCuidador existente = service.get(id);
-        if (existente != null) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body("ya existe una asignacion con esos datos");
+    /**
+     * Devuelve las asignaciones activas (turno sin cerrar) para el cuidador logueado.
+     */
+    @GetMapping("/mi-turno-activo")
+    public ResponseEntity<?> getTurnoActivo(@RequestHeader("Authorization") String authHeader) {
+        // 1. Obtener usuario (del token)
+        Usuario actor = getActorFromToken(authHeader);
+        if (actor == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Token inválido."));
         }
 
-        try {
-            AsignacionCuidador guardada = service.save(a);
-
-            registrarAuditoria(
-                    authHeader, // <-- AÑADIDO
-                    "Asignacion_Cuidador",
-                    id.toString(),
-                    Accion.INSERT,
-                    "se asigno el cuidador " + a.getIdEmpleado() + " a la mascota " + a.getIdMascota()
-            );
-
-            return ResponseEntity.ok(guardada);
-        } catch (DataIntegrityViolationException ex) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body("no se pudo guardar la asignacion (verifica relaciones o duplicados)");
+        // 2. Obtener cuidador (del usuario)
+        Optional<Cuidador> cuidadorOpt = cuidadorService.findByUsuario(actor);
+        if (cuidadorOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Perfil de cuidador no encontrado."));
         }
+
+        // 3. ¡LA CORRECCIÓN! Usar el ID de Empleado del cuidador
+        Integer idEmpleado = cuidadorOpt.get().getIdEmpleado();
+        List<AsignacionCuidador> turnoActivo = service.findActivasByIdEmpleado(idEmpleado);
+
+        return ResponseEntity.ok(turnoActivo);
     }
 
-    // --- 7. MÉTODO 'delete' ACTUALIZADO ---
-    @DeleteMapping
-    public ResponseEntity<?> delete(@RequestParam Integer idMascota,
-                                    @RequestParam Integer idEmpleado,
-                                    @RequestParam String fechaInicio,
-                                    @RequestHeader("Authorization") String authHeader) { // <-- AÑADIDO
-        try {
-            LocalDate fecha = LocalDate.parse(fechaInicio);
-            AsignacionCuidadorId id = new AsignacionCuidadorId(idMascota, idEmpleado, fecha);
-            AsignacionCuidador existente = service.get(id);
-
-            if (existente == null) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body("no existe la asignacion indicada");
-            }
-
-            service.delete(id);
-
-            registrarAuditoria(
-                    authHeader, // <-- AÑADIDO
-                    "Asignacion_Cuidador",
-                    id.toString(),
-                    Accion.DELETE,
-                    "se elimino la asignacion del cuidador " + idEmpleado + " a la mascota " + idMascota
-            );
-
-            return ResponseEntity.ok().build();
-
-        } catch (Exception ex) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body("error al eliminar la asignacion: " + ex.getMessage());
+    /**
+     * Inicia un nuevo turno para el cuidador logueado.
+     * Asigna todas las mascotas de su zona.
+     */
+    @Transactional
+    @PostMapping("/comenzar-turno")
+    public ResponseEntity<?> comenzarTurno(@RequestHeader("Authorization") String authHeader) {
+        Usuario actor = getActorFromToken(authHeader);
+        if (actor == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Token inválido."));
         }
+
+        // 1. Buscar al cuidador y su zona
+        Optional<Cuidador> cuidadorOpt = cuidadorService.findByUsuario(actor);
+        if (cuidadorOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "No se encontró tu perfil de cuidador."));
+        }
+        Cuidador cuidador = cuidadorOpt.get();
+        Integer idEmpleado = cuidador.getIdEmpleado();
+        String zona = cuidador.getZonaAsignada();
+
+        // 2. Verificar que no tenga un turno activo (¡CORREGIDO!)
+        if (!service.findActivasByIdEmpleado(idEmpleado).isEmpty()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Ya tienes un turno activo. Termínalo antes de iniciar uno nuevo."));
+        }
+
+        if (zona == null || zona.isBlank()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", "No tienes una zona asignada. Contacta al administrador."));
+        }
+
+        // 3. Buscar mascotas en esa zona (que estén EN_REFUGIO)
+        List<Mascota> mascotasEnZona = mascotaService.findByZonaAsignada(zona).stream()
+                .filter(m -> m.getEstado() == Mascota.Estado.EN_REFUGIO)
+                .collect(Collectors.toList());
+
+        if (mascotasEnZona.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "No hay mascotas EN REFUGIO en tu zona asignada (" + zona + ") en este momento."));
+        }
+
+        // 4. Crear las nuevas asignaciones
+        LocalDate fechaInicio = LocalDate.now();
+        List<AsignacionCuidador> nuevasAsignaciones = new ArrayList<>();
+
+        for (Mascota mascota : mascotasEnZona) {
+            AsignacionCuidador nueva = AsignacionCuidador.builder()
+                    .idMascota(mascota.getIdMascota())
+                    .idEmpleado(idEmpleado)
+                    .fechaInicio(fechaInicio)
+                    .fechaFin(null)
+                    .comentarios(null)
+                    .build();
+            nuevasAsignaciones.add(service.save(nueva));
+        }
+
+        registrarAuditoria(authHeader, "Asignacion_Cuidador", idEmpleado.toString(), Accion.INSERT, "Inició turno. " + nuevasAsignaciones.size() + " mascotas asignadas.");
+        return ResponseEntity.status(HttpStatus.CREATED).body(nuevasAsignaciones);
     }
 
-    // --- 8. HELPER DE AUDITORÍA ACTUALIZADO ---
-    private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Accion accion, String comentario) {
-        Usuario actor = null;
+    /**
+     * Guarda el comentario de una mascota específica en el turno activo.
+     */
+    @Transactional
+    @PostMapping("/guardar-comentario")
+    public ResponseEntity<?> guardarComentario(@RequestBody Map<String, Object> payload,
+                                               @RequestHeader("Authorization") String authHeader) {
+        Usuario actor = getActorFromToken(authHeader);
+        if (actor == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Token inválido."));
+        }
+
+        Optional<Cuidador> cuidadorOpt = cuidadorService.findByUsuario(actor);
+        if (cuidadorOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Perfil de cuidador no encontrado."));
+        }
+        // ¡CORRECCIÓN! Usar ID Empleado
+        Integer idEmpleado = cuidadorOpt.get().getIdEmpleado();
+
+        Integer idMascota = (Integer) payload.get("idMascota");
+        String comentarios = (String) payload.get("comentarios");
+
+        if (idMascota == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "idMascota es requerido."));
+        }
+
+        // ¡CORRECCIÓN! Usar ID Empleado
+        Optional<AsignacionCuidador> asignacionOpt = service.findActivaByIdMascotaAndIdEmpleado(idMascota, idEmpleado);
+        if (asignacionOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "No se encontró una asignación activa para esta mascota."));
+        }
+
+        AsignacionCuidador asignacion = asignacionOpt.get();
+        asignacion.setComentarios(comentarios);
+        service.save(asignacion);
+
+        return ResponseEntity.ok(asignacion);
+    }
+
+    /**
+     * Cierra el turno activo del cuidador.
+     */
+    @Transactional
+    @PostMapping("/terminar-turno")
+    public ResponseEntity<?> terminarTurno(@RequestHeader("Authorization") String authHeader) {
+        Usuario actor = getActorFromToken(authHeader);
+        if (actor == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Token inválido."));
+        }
+
+        Optional<Cuidador> cuidadorOpt = cuidadorService.findByUsuario(actor);
+        if (cuidadorOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Perfil de cuidador no encontrado."));
+        }
+        // ¡CORRECCIÓN! Usar ID Empleado
+        Integer idEmpleado = cuidadorOpt.get().getIdEmpleado();
+
+        // ¡CORRECCIÓN! Usar ID Empleado
+        List<AsignacionCuidador> turnoActivo = service.findActivasByIdEmpleado(idEmpleado);
+        if (turnoActivo.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", "No tienes ningún turno activo para terminar."));
+        }
+
+        // ¡CORRECCIÓN! Usar ID Empleado
+        service.terminarTurno(idEmpleado, LocalDate.now());
+
+        registrarAuditoria(authHeader, "Asignacion_Cuidador", idEmpleado.toString(), Accion.UPDATE, "Terminó turno. " + turnoActivo.size() + " mascotas liberadas.");
+        return ResponseEntity.ok(Map.of("message", "Turno terminado exitosamente."));
+    }
+
+
+    // --- HELPER DE AUDITORÍA ---
+    private Usuario getActorFromToken(String authHeader) {
         try {
-            // Extraer el usuario del token
             String token = authHeader.substring(7); // Quita "Bearer "
             String login = jwtUtil.getLoginFromToken(token);
             Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
-            if (usuarioOpt.isPresent()) {
-                actor = usuarioOpt.get();
-            }
+            return usuarioOpt.orElse(null);
         } catch (Exception e) {
-            System.err.println("Error al obtener usuario para auditoría: " + e.getMessage());
+            return null;
         }
+    }
+
+    private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Accion accion, String comentario) {
+        Usuario actor = getActorFromToken(authHeader);
 
         Auditoria aud = Auditoria.builder()
-                .usuario(actor) // <-- Se asigna el actor (o null si falló)
+                .usuario(actor)
                 .tablaAfectada(tabla)
                 .idRegistro(idRegistro)
                 .accion(accion)

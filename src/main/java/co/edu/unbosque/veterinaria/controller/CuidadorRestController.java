@@ -121,6 +121,36 @@ public class CuidadorRestController {
                     .body("no se puede eliminar: el registro tiene referencias");
         }
     }
+    @GetMapping("/me")
+    public ResponseEntity<?> getMiPerfil(@RequestHeader(value = "Authorization", required = false) String authHeader) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token no válido o ausente.");
+        }
+
+        String token = authHeader.substring(7);
+        String login;
+        try {
+            if (!jwtUtil.validateToken(token)) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token inválido.");
+            }
+            login = jwtUtil.getLoginFromToken(token);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Error al procesar token.");
+        }
+
+        Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
+        if (usuarioOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Usuario no encontrado.");
+        }
+
+        // Usamos el nuevo método del servicio
+        Optional<Cuidador> cuidadorOpt = cuidadorService.findByUsuario(usuarioOpt.get());
+        if (cuidadorOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Perfil de cuidador no encontrado.");
+        }
+
+        return ResponseEntity.ok(cuidadorOpt.get());
+    }
 
     // --- 8. HELPER DE AUDITORÍA ACTUALIZADO ---
     private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Accion accion, String comentario) {
