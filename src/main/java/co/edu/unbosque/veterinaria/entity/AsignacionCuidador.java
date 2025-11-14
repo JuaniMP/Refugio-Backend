@@ -24,4 +24,8 @@ public class AsignacionCuidador {
 
     @Column(name = "fecha_fin")
     private LocalDate fechaFin;
+
+    // --- ⬇️ CAMPO NUEVO A AÑADIR ⬇️ ---
+    @Column(name = "comentarios", columnDefinition = "text")
+    private String comentarios;
 }

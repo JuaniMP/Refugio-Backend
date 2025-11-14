@@ -48,4 +48,7 @@ public class Mascota {
     @Enumerated(EnumType.STRING)
     @Column(name = "estado", length = 25)
     private Estado estado; // EN_REFUGIO, EN_PROCESO_ADOPCION, ADOPTADA, OTRO
+
+    @Column(name = "zona_asignada", length = 100)
+    private String zonaAsignada;
 }
