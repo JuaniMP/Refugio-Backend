@@ -4,8 +4,11 @@ import co.edu.unbosque.veterinaria.entity.AsignacionCuidador;
 import co.edu.unbosque.veterinaria.entity.AsignacionCuidadorId;
 import co.edu.unbosque.veterinaria.entity.Auditoria;
 import co.edu.unbosque.veterinaria.entity.Auditoria.Accion;
+import co.edu.unbosque.veterinaria.entity.Usuario; // <-- 1. IMPORTAR
 import co.edu.unbosque.veterinaria.service.api.AsignacionCuidadorServiceAPI;
 import co.edu.unbosque.veterinaria.service.api.AuditoriaServiceAPI;
+import co.edu.unbosque.veterinaria.service.api.UsuarioServiceAPI; // <-- 2. IMPORTAR
+import co.edu.unbosque.veterinaria.utils.JwtUtil; // <-- 3. IMPORTAR
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -14,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional; // <-- 4. IMPORTAR
 
 @CrossOrigin(origins = "*")
 @RestController
@@ -23,22 +27,28 @@ public class AsignacionCuidadorRestController {
     @Autowired private AsignacionCuidadorServiceAPI service;
     @Autowired private AuditoriaServiceAPI auditoriaService;
 
-    // listar todas las asignaciones
+    // --- 5. DEPENDENCIAS AÑADIDAS ---
+    @Autowired private JwtUtil jwtUtil;
+    @Autowired private UsuarioServiceAPI usuarioService;
+
+
+    // ... (getAll sin cambios) ...
     @GetMapping("/getAll")
     public List<AsignacionCuidador> getAll() {
         return service.getAll();
     }
 
-    // crear nueva asignacion (no se permite update)
+
+    // --- 6. MÉTODO 'save' ACTUALIZADO ---
     @PostMapping("/save")
-    public ResponseEntity<?> save(@RequestBody AsignacionCuidador a) {
-        // validaciones básicas
+    public ResponseEntity<?> save(@RequestBody AsignacionCuidador a,
+                                  @RequestHeader("Authorization") String authHeader) { // <-- AÑADIDO
+
+        // ... (validaciones existentes sin cambios) ...
         if (a.getIdMascota() == null || a.getIdEmpleado() == null || a.getFechaInicio() == null) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body("debes enviar idMascota, idEmpleado y fechaInicio");
         }
-
-        // validar si ya existe esa asignacion exacta
         AsignacionCuidadorId id = new AsignacionCuidadorId(a.getIdMascota(), a.getIdEmpleado(), a.getFechaInicio());
         AsignacionCuidador existente = service.get(id);
         if (existente != null) {
@@ -50,6 +60,7 @@ public class AsignacionCuidadorRestController {
             AsignacionCuidador guardada = service.save(a);
 
             registrarAuditoria(
+                    authHeader, // <-- AÑADIDO
                     "Asignacion_Cuidador",
                     id.toString(),
                     Accion.INSERT,
@@ -63,11 +74,12 @@ public class AsignacionCuidadorRestController {
         }
     }
 
-    // eliminar asignacion (fin de la asignacion)
+    // --- 7. MÉTODO 'delete' ACTUALIZADO ---
     @DeleteMapping
     public ResponseEntity<?> delete(@RequestParam Integer idMascota,
                                     @RequestParam Integer idEmpleado,
-                                    @RequestParam String fechaInicio) {
+                                    @RequestParam String fechaInicio,
+                                    @RequestHeader("Authorization") String authHeader) { // <-- AÑADIDO
         try {
             LocalDate fecha = LocalDate.parse(fechaInicio);
             AsignacionCuidadorId id = new AsignacionCuidadorId(idMascota, idEmpleado, fecha);
@@ -81,6 +93,7 @@ public class AsignacionCuidadorRestController {
             service.delete(id);
 
             registrarAuditoria(
+                    authHeader, // <-- AÑADIDO
                     "Asignacion_Cuidador",
                     id.toString(),
                     Accion.DELETE,
@@ -95,10 +108,23 @@ public class AsignacionCuidadorRestController {
         }
     }
 
-    // helper para crear la auditoria
-    private void registrarAuditoria(String tabla, String idRegistro, Accion accion, String comentario) {
+    // --- 8. HELPER DE AUDITORÍA ACTUALIZADO ---
+    private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Accion accion, String comentario) {
+        Usuario actor = null;
+        try {
+            // Extraer el usuario del token
+            String token = authHeader.substring(7); // Quita "Bearer "
+            String login = jwtUtil.getLoginFromToken(token);
+            Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
+            if (usuarioOpt.isPresent()) {
+                actor = usuarioOpt.get();
+            }
+        } catch (Exception e) {
+            System.err.println("Error al obtener usuario para auditoría: " + e.getMessage());
+        }
+
         Auditoria aud = Auditoria.builder()
-                .usuario(null) // cuando tengas autenticacion, agregas el usuario
+                .usuario(actor) // <-- Se asigna el actor (o null si falló)
                 .tablaAfectada(tabla)
                 .idRegistro(idRegistro)
                 .accion(accion)

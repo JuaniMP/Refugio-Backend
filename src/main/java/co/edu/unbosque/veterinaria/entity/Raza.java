@@ -18,4 +18,9 @@ public class Raza {
 
     @Column(name = "nombre", nullable = false, length = 50)
     private String nombre;
+
+    // --- CAMPO AÑADIDO ---
+    @Column(name = "estado", length = 10, nullable = false)
+    @Builder.Default
+    private String estado = "ACTIVO";
 }

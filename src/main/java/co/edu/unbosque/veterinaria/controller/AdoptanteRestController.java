@@ -6,6 +6,7 @@ import co.edu.unbosque.veterinaria.entity.Usuario;
 import co.edu.unbosque.veterinaria.service.api.AdoptanteServiceAPI;
 import co.edu.unbosque.veterinaria.service.api.AuditoriaServiceAPI;
 import co.edu.unbosque.veterinaria.service.api.UsuarioServiceAPI;
+import co.edu.unbosque.veterinaria.utils.EmailService; // <-- 1. IMPORTAR
 import co.edu.unbosque.veterinaria.utils.HashPass;
 import co.edu.unbosque.veterinaria.utils.JwtUtil;
 import co.edu.unbosque.veterinaria.utils.ResourceNotFoundException;
@@ -16,9 +17,12 @@ import org.springframework.http.*;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant; // <-- 2. IMPORTAR
+import java.time.temporal.ChronoUnit; // <-- 3. IMPORTAR
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Random; // <-- 4. IMPORTAR
 
 @CrossOrigin(origins = "*")
 @RestController
@@ -30,6 +34,9 @@ public class AdoptanteRestController {
     @Autowired private AuditoriaServiceAPI auditoriaService;
     @Autowired private HashPass hashPass;
     @Autowired private JwtUtil jwtUtil;
+
+    // --- 5. INYECTAR EL SERVICIO DE EMAIL ---
+    @Autowired private EmailService emailService;
 
     // =========================
     //        QUERIES
@@ -82,16 +89,10 @@ public class AdoptanteRestController {
     //   CREAR / ACTUALIZAR
     // =========================
 
-    /**
-     * Crea o actualiza un Adoptante.
-     * - Si viene Usuario nuevo (sin id): se registra (valida login único, hashea clave, rol AP, estado ACTIVO).
-     * - Si viene Usuario existente (con id): actualiza login (normalizado).
-     * - Valida duplicidad de documento de Adoptante.
-     * - Audita INSERT/UPDATE.
-     */
     @Transactional
     @PostMapping("/save")
-    public ResponseEntity<?> save(@RequestBody Adoptante a) {
+    public ResponseEntity<?> save(@RequestBody Adoptante a,
+                                  @RequestHeader(value = "Authorization", required = false) String authHeader) {
 
         // === 0) Normalizar flags y cargar existente si aplica ===
         boolean esNuevoAdoptante = (a.getIdAdoptante() == null);
@@ -119,8 +120,6 @@ public class AdoptanteRestController {
 
         // === 2) Manejar Usuario asociado (registro o actualización) ===
         if (a.getUsuario() == null) {
-            // Si es registro inicial de adoptante, el usuario es obligatorio (según tu flujo)
-            // Si quieres permitir adoptante sin usuario, cambia esta validación.
             return ResponseEntity.badRequest().body("Los datos de usuario son obligatorios.");
         }
 
@@ -140,14 +139,35 @@ public class AdoptanteRestController {
             }
 
             datosUsuario.setLogin(loginNormalizado);
-            // IMPORTANTE: aquí 'passwordHash' trae la clave en texto plano desde el front.
-            // Usamos el mismo método que ya tienen para hashearla:
             datosUsuario.setPasswordHash(hashPass.generarHash(datosUsuario, datosUsuario.getPasswordHash()));
             datosUsuario.setRol(Usuario.Rol.AP);
-            datosUsuario.setEstado(Usuario.Estado.ACTIVO);
+
+            // --- 6. CAMBIOS EN LA LÓGICA DE REGISTRO ---
+
+            // a) Poner usuario como INACTIVO por defecto
+            datosUsuario.setEstado(Usuario.Estado.INACTIVO);
+
+            // b) Generar código de 6 dígitos
+            String codigo = String.format("%06d", new Random().nextInt(999999));
+
+            // c) Guardar código y expiración (1 hora)
+            datosUsuario.setVerificationCode(codigo);
+            datosUsuario.setVerificationCodeExpires(Instant.now().plus(1, ChronoUnit.HOURS));
 
             Usuario userGuardado = usuarioService.save(datosUsuario);
             a.setUsuario(userGuardado);
+
+            // d) Enviar el correo de verificación
+            try {
+                // Asumiendo que EmailService.java existe y está inyectado
+                emailService.sendVerificationEmail(userGuardado.getLogin(), codigo);
+            } catch (Exception e) {
+                // Si el correo falla, no detenemos el registro, solo lo reportamos.
+                System.err.println("Error al enviar email de verificación: " + e.getMessage());
+                // Opcional: podrías querer devolver un error aquí si el email es crítico
+                // return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error al enviar email de verificación.");
+            }
+            // --- FIN DE CAMBIOS ---
 
         } else {
             // ----- Actualización de usuario existente (solo login / email) -----
@@ -157,7 +177,6 @@ public class AdoptanteRestController {
             }
 
             String loginNormalizado = normalizarLogin(datosUsuario.getLogin());
-            // Validar colisión de login con otros usuarios
             Optional<Usuario> colision = usuarioService.findByLogin(loginNormalizado);
             if (colision.isPresent() && !Objects.equals(colision.get().getIdUsuario(), userExistente.getIdUsuario())) {
                 return ResponseEntity.status(HttpStatus.CONFLICT)
@@ -167,8 +186,6 @@ public class AdoptanteRestController {
             userExistente.setLogin(loginNormalizado);
             Usuario userGuardado = usuarioService.save(userExistente);
             a.setUsuario(userGuardado);
-
-            // (Si algún día permites cambiar contraseña aquí, validar y hashear como arriba)
         }
 
         // === 3) Guardar Adoptante ===
@@ -176,6 +193,7 @@ public class AdoptanteRestController {
 
         // === 4) Auditoría ===
         registrarAuditoria(
+                authHeader, // <-- Se pasa el header (puede ser null si es registro)
                 "Adoptante",
                 guardado.getIdAdoptante() != null ? guardado.getIdAdoptante().toString() : null,
                 esNuevoAdoptante ? Auditoria.Accion.INSERT : Auditoria.Accion.UPDATE,
@@ -191,7 +209,8 @@ public class AdoptanteRestController {
     //         DELETE
     // =========================
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> delete(@PathVariable Integer id) {
+    public ResponseEntity<?> delete(@PathVariable Integer id,
+                                    @RequestHeader("Authorization") String authHeader) {
         try {
             Adoptante a = adoptanteService.get(id);
             if (a == null) {
@@ -202,6 +221,7 @@ public class AdoptanteRestController {
             adoptanteService.delete(id);
 
             registrarAuditoria(
+                    authHeader,
                     "Adoptante",
                     id.toString(),
                     Auditoria.Accion.DELETE,
@@ -220,9 +240,25 @@ public class AdoptanteRestController {
     //       HELPERS
     // =========================
 
-    private void registrarAuditoria(String tabla, String idRegistro, Auditoria.Accion accion, String comentario) {
+    private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Auditoria.Accion accion, String comentario) {
+        Usuario actor = null;
+        try {
+            // Si el authHeader no es nulo y es válido, extrae el usuario
+            if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                String token = authHeader.substring(7);
+                String login = jwtUtil.getLoginFromToken(token);
+                Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
+                if (usuarioOpt.isPresent()) {
+                    actor = usuarioOpt.get();
+                }
+            }
+            // Si authHeader es nulo (ej. en el registro), el actor simplemente queda en null
+        } catch (Exception e) {
+            System.err.println("Error al obtener usuario para auditoría: " + e.getMessage());
+        }
+
         Auditoria aud = Auditoria.builder()
-                .usuario(null) // TODO: si luego amarras al usuario autenticado, ponlo acá
+                .usuario(actor)
                 .tablaAfectada(tabla)
                 .idRegistro(idRegistro)
                 .accion(accion)

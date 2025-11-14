@@ -3,10 +3,13 @@ package co.edu.unbosque.veterinaria.controller;
 import co.edu.unbosque.veterinaria.entity.Auditoria;
 import co.edu.unbosque.veterinaria.entity.Auditoria.Accion;
 import co.edu.unbosque.veterinaria.entity.Empleado;
+import co.edu.unbosque.veterinaria.entity.Usuario; // <-- 1. IMPORTAR
 import co.edu.unbosque.veterinaria.entity.Veterinario;
 import co.edu.unbosque.veterinaria.service.api.AuditoriaServiceAPI;
 import co.edu.unbosque.veterinaria.service.api.EmpleadoServiceAPI;
+import co.edu.unbosque.veterinaria.service.api.UsuarioServiceAPI; // <-- 2. IMPORTAR
 import co.edu.unbosque.veterinaria.service.api.VeterinarioServiceAPI;
+import co.edu.unbosque.veterinaria.utils.JwtUtil; // <-- 3. IMPORTAR
 import co.edu.unbosque.veterinaria.utils.ResourceNotFoundException;
 
 
@@ -16,6 +19,7 @@ import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Optional; // <-- 4. IMPORTAR
 
 @CrossOrigin(origins = "*")
 @RestController
@@ -23,8 +27,12 @@ import java.util.List;
 public class VeterinarioRestController {
 
     @Autowired private VeterinarioServiceAPI service;
-    @Autowired private EmpleadoServiceAPI empleadoService;   // <-- ADJUNTAR EMPLEADO
+    @Autowired private EmpleadoServiceAPI empleadoService;
     @Autowired private AuditoriaServiceAPI auditoriaService;
+
+    // --- 5. DEPENDENCIAS AÑADIDAS ---
+    @Autowired private JwtUtil jwtUtil;
+    @Autowired private UsuarioServiceAPI usuarioService;
 
     @GetMapping("/getAll")
     public List<Veterinario> getAll() { return service.getAll(); }
@@ -36,39 +44,31 @@ public class VeterinarioRestController {
         return ResponseEntity.ok(v);
     }
 
-
+    // --- 6. MÉTODO 'save' ACTUALIZADO ---
     @PostMapping("/save")
-    public ResponseEntity<?> save(@RequestBody Veterinario body) {
+    public ResponseEntity<?> save(@RequestBody Veterinario body,
+                                  @RequestHeader("Authorization") String authHeader) { // <-- AÑADIDO
 
-        // 1) Validación: debe venir id del empleado
+        // ... (validaciones existentes sin cambios) ...
         if (body.getEmpleado() == null || body.getEmpleado().getIdEmpleado() == null) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body("debes enviar el empleado con su id");
         }
         Integer empId = body.getEmpleado().getIdEmpleado();
-
-        // 2) Cargar entidades MANAGED
         Empleado emp = empleadoService.get(empId);
         if (emp == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body("no existe el empleado con id " + empId);
         }
-
-        // ¿Ya existe un veterinario para ese empleado?
         Veterinario existente = service.get(empId);
         final boolean esNuevo = (existente == null);
-
         Veterinario target;
         if (esNuevo) {
-            // 3a) INSERT: crear NUEVO sin id; @MapsId copiará emp.id -> id_empleado
             target = new Veterinario();
             target.setEmpleado(emp);
         } else {
-            // 3b) UPDATE: usar la instancia MANAGED existente
             target = existente;
         }
-
-        // Normalizar/actualizar campos
         if (body.getEspecialidad() != null)
             target.setEspecialidad(body.getEspecialidad().trim());
         if (body.getRegistroProfesional() != null)
@@ -77,7 +77,9 @@ public class VeterinarioRestController {
         try {
             Veterinario guardado = service.save(target);
 
+            // --- 7. LLAMADA AL HELPER ACTUALIZADA ---
             registrarAuditoria(
+                    authHeader, // <-- AÑADIDO
                     "Veterinario",
                     guardado.getIdEmpleado().toString(),
                     esNuevo ? Auditoria.Accion.INSERT : Auditoria.Accion.UPDATE,
@@ -94,16 +96,23 @@ public class VeterinarioRestController {
     }
 
 
-
+    // --- 8. MÉTODO 'delete' ACTUALIZADO ---
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> delete(@PathVariable Integer id) {
+    public ResponseEntity<?> delete(@PathVariable Integer id,
+                                    @RequestHeader("Authorization") String authHeader) { // <-- AÑADIDO
         Veterinario v = service.get(id);
         if (v == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("no existe el veterinario con id " + id);
         }
         try {
             service.delete(id);
-            registrarAuditoria("Veterinario", id.toString(), Accion.DELETE,
+
+            // --- 9. LLAMADA AL HELPER ACTUALIZADA ---
+            registrarAuditoria(
+                    authHeader, // <-- AÑADIDO
+                    "Veterinario",
+                    id.toString(),
+                    Accion.DELETE,
                     "se elimino el veterinario del empleado " + id);
             return ResponseEntity.ok().build();
         } catch (DataIntegrityViolationException ex) {
@@ -112,9 +121,23 @@ public class VeterinarioRestController {
         }
     }
 
-    private void registrarAuditoria(String tabla, String idRegistro, Auditoria.Accion accion, String comentario) {
+    // --- 10. HELPER DE AUDITORÍA ACTUALIZADO ---
+    private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Accion accion, String comentario) {
+        Usuario actor = null;
+        try {
+            // Extraer el usuario del token
+            String token = authHeader.substring(7); // Quita "Bearer "
+            String login = jwtUtil.getLoginFromToken(token);
+            Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
+            if (usuarioOpt.isPresent()) {
+                actor = usuarioOpt.get();
+            }
+        } catch (Exception e) {
+            System.err.println("Error al obtener usuario para auditoría: " + e.getMessage());
+        }
+
         Auditoria aud = Auditoria.builder()
-                .usuario(null)
+                .usuario(actor) // <-- Se asigna el actor (o null si falló)
                 .tablaAfectada(tabla)
                 .idRegistro(idRegistro)
                 .accion(accion)
