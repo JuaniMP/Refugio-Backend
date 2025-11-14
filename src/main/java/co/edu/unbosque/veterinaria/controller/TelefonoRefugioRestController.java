@@ -12,6 +12,7 @@ import co.edu.unbosque.veterinaria.utils.JwtUtil; // <-- IMPORTADO
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.*;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -34,6 +35,7 @@ public class TelefonoRefugioRestController {
         return service.getAll();
     }
 
+    @Transactional
     @PostMapping("/save")
     public ResponseEntity<TelefonoRefugio> save(@RequestBody TelefonoRefugio t,
                                                 @RequestHeader("Authorization") String authHeader) { // <-- Se pide el Token
@@ -63,7 +65,7 @@ public class TelefonoRefugioRestController {
 
         return ResponseEntity.ok(guardado);
     }
-
+    @Transactional
     @DeleteMapping
     public ResponseEntity<?> delete(@RequestParam Integer idRefugio,
                                     @RequestParam String telefono,

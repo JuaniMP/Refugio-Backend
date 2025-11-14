@@ -34,6 +34,12 @@ public class Usuario {
     @Column(name = "creado_en", insertable = false, updatable = false)
     private Instant creadoEn;
 
+    @Column(name = "verification_code", length = 64)
+    private String verificationCode;
+
+    @Column(name = "verification_code_expires")
+    private Instant verificationCodeExpires;
+
     public enum Estado {
         ACTIVO,
         INACTIVO

@@ -21,12 +21,14 @@ public class Mascota {
     @Column(name = "id_mascota")
     private Integer idMascota;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    // --- CAMBIO AQUÍ ---
+    @ManyToOne(fetch = FetchType.EAGER) // De LAZY a EAGER
     @JoinColumn(name = "id_refugio", nullable = false)
     private Refugio refugio;
 
     // OJO: la especie se deduce por la raza. La tabla Mascota NO tiene id_especie
-    @ManyToOne(fetch = FetchType.LAZY)
+    // --- CAMBIO AQUÍ ---
+    @ManyToOne(fetch = FetchType.EAGER) // De LAZY a EAGER
     @JoinColumn(name = "id_raza", nullable = false)
     private Raza raza;
 

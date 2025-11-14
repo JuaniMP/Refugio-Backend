@@ -3,8 +3,11 @@ package co.edu.unbosque.veterinaria.controller;
 import co.edu.unbosque.veterinaria.entity.Auditoria;
 import co.edu.unbosque.veterinaria.entity.Auditoria.Accion;
 import co.edu.unbosque.veterinaria.entity.Raza;
+import co.edu.unbosque.veterinaria.entity.Usuario; // <-- 1. IMPORTAR
 import co.edu.unbosque.veterinaria.service.api.AuditoriaServiceAPI;
 import co.edu.unbosque.veterinaria.service.api.RazaServiceAPI;
+import co.edu.unbosque.veterinaria.service.api.UsuarioServiceAPI; // <-- 2. IMPORTAR
+import co.edu.unbosque.veterinaria.utils.JwtUtil; // <-- 3. IMPORTAR
 import co.edu.unbosque.veterinaria.utils.ResourceNotFoundException;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional; // <-- 4. IMPORTAR
 
 @CrossOrigin(origins = "*")
 @RestController
@@ -23,13 +27,16 @@ public class RazaRestController {
     @Autowired private RazaServiceAPI service;
     @Autowired private AuditoriaServiceAPI auditoriaService;
 
-    // listar
+    // --- 5. DEPENDENCIAS AÑADIDAS ---
+    @Autowired private JwtUtil jwtUtil;
+    @Autowired private UsuarioServiceAPI usuarioService;
+
+    // ... (getAll y get sin cambios) ...
     @GetMapping("/getAll")
     public List<Raza> getAll() {
         return service.getAll();
     }
 
-    // obtener por id
     @GetMapping("/{id}")
     public ResponseEntity<Raza> get(@PathVariable Integer id) throws ResourceNotFoundException {
         Raza r = service.get(id);
@@ -37,29 +44,34 @@ public class RazaRestController {
         return ResponseEntity.ok(r);
     }
 
-    // crear o actualizar
+
+    // --- 6. MÉTODO 'save' ACTUALIZADO ---
     @PostMapping("/save")
-    public ResponseEntity<?> save(@RequestBody Raza r) {
+    public ResponseEntity<?> save(@RequestBody Raza r,
+                                  @RequestHeader("Authorization") String authHeader) { // <-- AÑADIDO
         boolean esNuevo = (r.getIdRaza() == null);
 
-        // validaciones basicas
+        // ... (validaciones existentes sin cambios) ...
         if (r.getNombre() == null || r.getNombre().isBlank()) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("el nombre es obligatorio");
         }
         if (r.getEspecie() == null || r.getEspecie().getIdEspecie() == null) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("debes enviar la especie");
         }
-
-        // si es update, validar existencia
-        if (!esNuevo) {
+        if (esNuevo) {
+            if (r.getEstado() == null) {
+                r.setEstado("ACTIVO");
+            }
+        } else {
             Raza existente = service.get(r.getIdRaza());
             if (existente == null) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
                         .body("no existe la raza con id " + r.getIdRaza());
             }
+            if (r.getEstado() == null) {
+                r.setEstado(existente.getEstado());
+            }
         }
-
-        // validar duplicados por especie + nombre
         for (Raza otra : service.getAll()) {
             if (r.getNombre().equalsIgnoreCase(otra.getNombre())
                     && Objects.equals(r.getEspecie().getIdEspecie(), otra.getEspecie().getIdEspecie())) {
@@ -78,7 +90,9 @@ public class RazaRestController {
                     .body("no se pudo guardar: revise las relaciones o duplicados");
         }
 
+        // --- 7. LLAMADA AL HELPER ACTUALIZADA ---
         registrarAuditoria(
+                authHeader, // <-- AÑADIDO
                 "Raza",
                 guardada.getIdRaza() != null ? guardada.getIdRaza().toString() : null,
                 esNuevo ? Accion.INSERT : Accion.UPDATE,
@@ -90,18 +104,20 @@ public class RazaRestController {
         return ResponseEntity.ok(guardada);
     }
 
-    // eliminar
+    // --- 8. MÉTODO 'delete' ACTUALIZADO ---
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> delete(@PathVariable Integer id) {
+    public ResponseEntity<?> delete(@PathVariable Integer id,
+                                    @RequestHeader("Authorization") String authHeader) { // <-- AÑADIDO
         Raza r = service.get(id);
         if (r == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body("no existe la raza con id " + id);
         }
-
         try {
             service.delete(id);
+            // --- 9. LLAMADA AL HELPER ACTUALIZADA ---
             registrarAuditoria(
+                    authHeader, // <-- AÑADIDO
                     "Raza",
                     id.toString(),
                     Accion.DELETE,
@@ -114,10 +130,23 @@ public class RazaRestController {
         }
     }
 
-    // helper auditoria
-    private void registrarAuditoria(String tabla, String idRegistro, Accion accion, String comentario) {
+    // --- 10. HELPER DE AUDITORÍA ACTUALIZADO ---
+    private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Accion accion, String comentario) {
+        Usuario actor = null;
+        try {
+            // Extraer el usuario del token
+            String token = authHeader.substring(7); // Quita "Bearer "
+            String login = jwtUtil.getLoginFromToken(token);
+            Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
+            if (usuarioOpt.isPresent()) {
+                actor = usuarioOpt.get();
+            }
+        } catch (Exception e) {
+            System.err.println("Error al obtener usuario para auditoría: " + e.getMessage());
+        }
+
         Auditoria aud = Auditoria.builder()
-                .usuario(null)
+                .usuario(actor) // <-- Se asigna el actor (o null si falló)
                 .tablaAfectada(tabla)
                 .idRegistro(idRegistro)
                 .accion(accion)

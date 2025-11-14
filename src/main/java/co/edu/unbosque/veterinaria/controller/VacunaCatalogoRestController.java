@@ -3,8 +3,11 @@ package co.edu.unbosque.veterinaria.controller;
 import co.edu.unbosque.veterinaria.entity.Auditoria;
 import co.edu.unbosque.veterinaria.entity.Auditoria.Accion;
 import co.edu.unbosque.veterinaria.entity.VacunaCatalogo;
+import co.edu.unbosque.veterinaria.entity.Usuario; // <-- 1. IMPORTAR
 import co.edu.unbosque.veterinaria.service.api.AuditoriaServiceAPI;
 import co.edu.unbosque.veterinaria.service.api.VacunaCatalogoServiceAPI;
+import co.edu.unbosque.veterinaria.service.api.UsuarioServiceAPI; // <-- 2. IMPORTAR
+import co.edu.unbosque.veterinaria.utils.JwtUtil; // <-- 3. IMPORTAR
 import co.edu.unbosque.veterinaria.utils.ResourceNotFoundException;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +16,7 @@ import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Optional; // <-- 4. IMPORTAR
 
 @CrossOrigin(origins = "*")
 @RestController
@@ -22,13 +26,15 @@ public class VacunaCatalogoRestController {
     @Autowired private VacunaCatalogoServiceAPI service;
     @Autowired private AuditoriaServiceAPI auditoriaService;
 
-    // listar todo
+    // --- 5. DEPENDENCIAS AÑADIDAS ---
+    @Autowired private JwtUtil jwtUtil;
+    @Autowired private UsuarioServiceAPI usuarioService;
+
+    // ... (getAll y get sin cambios) ...
     @GetMapping("/getAll")
     public List<VacunaCatalogo> getAll() {
         return service.getAll();
     }
-
-    // obtener por id
     @GetMapping("/{id}")
     public ResponseEntity<VacunaCatalogo> get(@PathVariable Integer id) throws ResourceNotFoundException {
         VacunaCatalogo v = service.get(id);
@@ -36,17 +42,16 @@ public class VacunaCatalogoRestController {
         return ResponseEntity.ok(v);
     }
 
-    // crear o actualizar
+    // --- 6. MÉTODO 'save' ACTUALIZADO ---
     @PostMapping("/save")
-    public ResponseEntity<?> save(@RequestBody VacunaCatalogo v) {
+    public ResponseEntity<?> save(@RequestBody VacunaCatalogo v,
+                                  @RequestHeader("Authorization") String authHeader) { // <-- AÑADIDO
         boolean esNuevo = (v.getIdVacuna() == null);
 
-        // validacion basica
+        // ... (validaciones existentes sin cambios) ...
         if (v.getNombre() == null || v.getNombre().isBlank()) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("el nombre es obligatorio");
         }
-
-        // si es update, validar existencia
         if (!esNuevo) {
             VacunaCatalogo existente = service.get(v.getIdVacuna());
             if (existente == null) {
@@ -54,8 +59,6 @@ public class VacunaCatalogoRestController {
                         .body("no existe la vacuna con id " + v.getIdVacuna());
             }
         }
-
-        // verificar duplicado por nombre (case-insensitive)
         for (VacunaCatalogo otra : service.getAll()) {
             if (otra.getNombre() != null && otra.getNombre().equalsIgnoreCase(v.getNombre())) {
                 if (esNuevo || !otra.getIdVacuna().equals(v.getIdVacuna())) {
@@ -68,7 +71,9 @@ public class VacunaCatalogoRestController {
         try {
             VacunaCatalogo guardada = service.save(v);
 
+            // --- 7. LLAMADA AL HELPER ACTUALIZADA ---
             registrarAuditoria(
+                    authHeader, // <-- AÑADIDO
                     "Vacuna_Catalogo",
                     guardada.getIdVacuna() != null ? guardada.getIdVacuna().toString() : null,
                     esNuevo ? Accion.INSERT : Accion.UPDATE,
@@ -84,9 +89,10 @@ public class VacunaCatalogoRestController {
         }
     }
 
-    // eliminar
+    // --- 8. MÉTODO 'delete' ACTUALIZADO ---
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> delete(@PathVariable Integer id) {
+    public ResponseEntity<?> delete(@PathVariable Integer id,
+                                    @RequestHeader("Authorization") String authHeader) { // <-- AÑADIDO
         VacunaCatalogo v = service.get(id);
         if (v == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -96,7 +102,9 @@ public class VacunaCatalogoRestController {
         try {
             service.delete(id);
 
+            // --- 9. LLAMADA AL HELPER ACTUALIZADA ---
             registrarAuditoria(
+                    authHeader, // <-- AÑADIDO
                     "Vacuna_Catalogo",
                     id.toString(),
                     Accion.DELETE,
@@ -110,10 +118,23 @@ public class VacunaCatalogoRestController {
         }
     }
 
-    // helper auditoria
-    private void registrarAuditoria(String tabla, String idRegistro, Auditoria.Accion accion, String comentario) {
+    // --- 10. HELPER DE AUDITORÍA ACTUALIZADO ---
+    private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Accion accion, String comentario) {
+        Usuario actor = null;
+        try {
+            // Extraer el usuario del token
+            String token = authHeader.substring(7); // Quita "Bearer "
+            String login = jwtUtil.getLoginFromToken(token);
+            Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
+            if (usuarioOpt.isPresent()) {
+                actor = usuarioOpt.get();
+            }
+        } catch (Exception e) {
+            System.err.println("Error al obtener usuario para auditoría: " + e.getMessage());
+        }
+
         Auditoria aud = Auditoria.builder()
-                .usuario(null)
+                .usuario(actor) // <-- Se asigna el actor (o null si falló)
                 .tablaAfectada(tabla)
                 .idRegistro(idRegistro)
                 .accion(accion)

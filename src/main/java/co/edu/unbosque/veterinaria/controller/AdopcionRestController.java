@@ -3,9 +3,13 @@ package co.edu.unbosque.veterinaria.controller;
 import co.edu.unbosque.veterinaria.entity.Auditoria;
 import co.edu.unbosque.veterinaria.entity.Auditoria.Accion;
 import co.edu.unbosque.veterinaria.entity.Adopcion;
+import co.edu.unbosque.veterinaria.entity.Usuario;
 import co.edu.unbosque.veterinaria.repository.AdopcionRepository;
 import co.edu.unbosque.veterinaria.service.api.AdopcionServiceAPI;
 import co.edu.unbosque.veterinaria.service.api.AuditoriaServiceAPI;
+// --- 1. IMPORTACIONES AÑADIDAS ---
+import co.edu.unbosque.veterinaria.service.api.UsuarioServiceAPI;
+import co.edu.unbosque.veterinaria.utils.JwtUtil;
 import co.edu.unbosque.veterinaria.utils.ResourceNotFoundException;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional; // <-- IMPORTACIÓN AÑADIDA
 
 @CrossOrigin(origins = "*")
 @RestController
@@ -24,13 +29,16 @@ public class AdopcionRestController {
     @Autowired private AuditoriaServiceAPI auditoriaService;
     @Autowired private AdopcionRepository adopcionRepository;
 
-    // listar todas las adopciones
+    // --- 2. DEPENDENCIAS AÑADIDAS ---
+    @Autowired private JwtUtil jwtUtil;
+    @Autowired private UsuarioServiceAPI usuarioService;
+
+
+    // ... (getAll y get sin cambios) ...
     @GetMapping("/getAll")
     public List<Adopcion> getAll() {
         return service.getAll();
     }
-
-    // obtener una adopcion por id
     @GetMapping("/{id}")
     public Adopcion get(@PathVariable Integer id) throws ResourceNotFoundException {
         Adopcion a = service.get(id);
@@ -38,16 +46,18 @@ public class AdopcionRestController {
         return a;
     }
 
-    // crear adopcion (inmutable: no se permiten updates)
+
+    // --- 3. MÉTODO 'save' ACTUALIZADO ---
+    // Ahora recibe el @RequestHeader("Authorization")
     @PostMapping("/save")
-    public ResponseEntity<?> save(@RequestBody Adopcion a) {
-        // si viene con id, rechazamos porque adopcion es inmutable
+    public ResponseEntity<?> save(@RequestBody Adopcion a,
+                                  @RequestHeader("Authorization") String authHeader) { // <-- AÑADIDO
+
+        // ... (Toda la lógica de validación de Adopcion no cambia) ...
         if (a.getIdAdopcion() != null) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body("no se permite actualizar adopciones; no debes enviar idAdopcion");
         }
-
-        // validaciones basicas
         if (a.getMascota() == null || a.getMascota().getIdMascota() == null) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body("debes enviar la mascota con idMascota");
@@ -59,19 +69,17 @@ public class AdopcionRestController {
         if (a.getFechaAdopcion() == null) {
             a.setFechaAdopcion(LocalDate.now());
         }
-
-        // evitar doble adopcion de la misma mascota (la columna ya es unique, pero validamos antes)
         Integer idMascota = a.getMascota().getIdMascota();
         if (adopcionRepository.existsByMascota_IdMascota(idMascota)) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body("la mascota " + idMascota + " ya fue adoptada");
         }
-
-        // guardar
         Adopcion guardada = service.save(a);
 
-        // auditoria: insert
+        // --- 4. LLAMADA AL HELPER ACTUALIZADA ---
+        // Ahora pasamos el authHeader
         registrarAuditoria(
+                authHeader, // <-- AÑADIDO
                 "Adopcion",
                 guardada.getIdAdopcion() != null ? guardada.getIdAdopcion().toString() : null,
                 Accion.INSERT,
@@ -81,10 +89,26 @@ public class AdopcionRestController {
         return ResponseEntity.ok(guardada);
     }
 
-    // helper auditoria simple con comentario
-    private void registrarAuditoria(String tabla, String idRegistro, Accion accion, String comentario) {
+    // --- 5. HELPER DE AUDITORÍA ACTUALIZADO ---
+    // (Copiado de TelefonoRefugioRestController para encapsular la lógica del token)
+    private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Accion accion, String comentario) {
+        Usuario actor = null;
+        try {
+            // Extraer el usuario del token
+            String token = authHeader.substring(7); // Quita "Bearer "
+            String login = jwtUtil.getLoginFromToken(token);
+            Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
+            if (usuarioOpt.isPresent()) {
+                actor = usuarioOpt.get();
+            }
+        } catch (Exception e) {
+            // Si la auditoría falla (ej. token inválido), al menos lo imprimimos
+            System.err.println("Error al obtener usuario para auditoría: " + e.getMessage());
+            // El 'actor' seguirá siendo null, lo cual está bien.
+        }
+
         Auditoria aud = Auditoria.builder()
-                .usuario(null) // si luego tienes el usuario actor autenticado, lo pones aqui
+                .usuario(actor) // <-- Se asigna el actor (o null si falló)
                 .tablaAfectada(tabla)
                 .idRegistro(idRegistro)
                 .accion(accion)
