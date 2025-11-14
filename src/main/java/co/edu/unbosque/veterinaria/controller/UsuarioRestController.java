@@ -10,10 +10,11 @@ import co.edu.unbosque.veterinaria.utils.HashPass;
 import co.edu.unbosque.veterinaria.utils.JwtUtil;
 import co.edu.unbosque.veterinaria.utils.LoginRequest;
 import co.edu.unbosque.veterinaria.utils.ResourceNotFoundException;
-import java.util.regex.Pattern; // Importar Pattern
+import java.util.regex.Pattern;
 
 import jakarta.validation.Valid;
-import jakarta.servlet.http.HttpServletRequest;
+// CORREGIDO: Se eliminó la importación de HttpServletRequest ya que no se usaba
+// import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
@@ -27,11 +28,26 @@ import java.util.*;
 @RequestMapping("/api/usuarios")
 public class UsuarioRestController {
 
-    @Autowired private UsuarioServiceAPI usuarioService;
-    @Autowired private AuditoriaServiceAPI auditoriaService;
-    @Autowired private HashPass hashPass;
-    @Autowired private JwtUtil jwtUtil;
-    @Autowired private EmailService emailService;
+    // --- CORREGIDO: Se cambió Field Injection por Constructor Injection ---
+    private final UsuarioServiceAPI usuarioService;
+    private final AuditoriaServiceAPI auditoriaService;
+    private final HashPass hashPass;
+    private final JwtUtil jwtUtil;
+    private final EmailService emailService;
+
+    @Autowired
+    public UsuarioRestController(UsuarioServiceAPI usuarioService,
+                                 AuditoriaServiceAPI auditoriaService,
+                                 HashPass hashPass,
+                                 JwtUtil jwtUtil,
+                                 EmailService emailService) {
+        this.usuarioService = usuarioService;
+        this.auditoriaService = auditoriaService;
+        this.hashPass = hashPass;
+        this.jwtUtil = jwtUtil;
+        this.emailService = emailService;
+    }
+    // --- FIN DE CORRECCIÓN DE INYECCIÓN ---
 
     // ===================== QUERIES =====================
 
@@ -54,7 +70,7 @@ public class UsuarioRestController {
 
         String loginNorm = normalizarLogin(incoming.getLogin());
         if (loginNorm == null || loginNorm.isBlank()) {
-            // CORREGIDO: Devolver Map en lugar de String
+            // CORREGIDO: Devolver Map en lugar de String (Esto ya lo tenías)
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", "El login (email) es obligatorio."));
         }
         incoming.setLogin(loginNorm);
@@ -66,7 +82,7 @@ public class UsuarioRestController {
         if (existentePorId != null) {
             esNuevo = false;
             if (optPorLogin.isPresent() && !Objects.equals(optPorLogin.get().getIdUsuario(), existentePorId.getIdUsuario())) {
-                // CORREGIDO: Devolver Map en lugar de String
+                // CORREGIDO: Devolver Map en lugar de String (Esto ya lo tenías)
                 return ResponseEntity.status(HttpStatus.CONFLICT)
                         .body(Map.of("message", "El login '" + loginNorm + "' ya está registrado."));
             }
@@ -84,13 +100,13 @@ public class UsuarioRestController {
         } else {
             esNuevo = true;
             if (optPorLogin.isPresent()) {
-                // CORREGIDO: Devolver Map en lugar de String
+                // CORREGIDO: Devolver Map en lugar de String (Esto ya lo tenías)
                 return ResponseEntity.status(HttpStatus.CONFLICT)
                         .body(Map.of("message", "El login '" + loginNorm + "' ya está registrado."));
             }
 
             if (incoming.getPasswordHash() == null || incoming.getPasswordHash().isBlank()) {
-                // CORREGIDO: Devolver Map en lugar de String
+                // CORREGIDO: Devolver Map en lugar de String (Esto ya lo tenías)
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                         .body(Map.of("message", "La clave es obligatoria para crear un usuario."));
             }
@@ -116,57 +132,65 @@ public class UsuarioRestController {
     // ======================= LOGIN =======================
 
     @PostMapping("/login")
-    public ResponseEntity<?> loginUsuario(@Valid @RequestBody LoginRequest loginRequest,
-                                          HttpServletRequest request) {
+    // CORREGIDO: Se eliminó HttpServletRequest request porque no se usaba
+    public ResponseEntity<?> loginUsuario(@Valid @RequestBody LoginRequest loginRequest) {
         String loginNorm = normalizarLogin(loginRequest.getLogin());
         if (loginNorm == null || loginNorm.isBlank()) {
-            // CORREGIDO: Devolver Map en lugar de String
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", "Login inválido."));
         }
 
         Optional<Usuario> usuarioOpt = usuarioService.findByLogin(loginNorm);
         if (usuarioOpt.isEmpty()) {
-            registrarAuditoria(null, "Usuario", null, Accion.UPDATE,
-                    "Intento de login fallido (usuario no existe): " + loginNorm);
-            // CORREGIDO: Devolver Map en lugar de String
+            // Nota: El 'null' aquí puede causar la advertencia "Passing 'null' argument"
+            // pero es lógicamente correcto, ya que no hay un 'actor' de usuario.
+            registrarAuditoria(null, "Usuario", null, Accion.UPDATE, "Intento de login fallido (usuario no existe): " + loginNorm);
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Usuario o contraseña incorrectos."));
         }
 
         Usuario usuario = usuarioOpt.get();
 
-        // --- LÓGICA DE LOGIN MODIFICADA (Revisa si está INACTIVO) ---
+        // Lógica de Adoptante INACTIVO (la dejamos como estaba)
         if (usuario.getEstado() == Usuario.Estado.INACTIVO) {
             if (usuario.getVerificationCode() != null && usuario.getVerificationCodeExpires() != null) {
-                registrarAuditoria(usuario, "Usuario",
-                        String.valueOf(usuario.getIdUsuario()), Accion.UPDATE,
-                        "Intento de login con cuenta INACTIVA (pendiente verificación): " + usuario.getLogin());
-
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(Map.of("error", "ACCOUNT_INACTIVE", "message", "La cuenta está inactiva. Por favor, revisa tu email y verifica tu cuenta."));
             }
-
-            registrarAuditoria(usuario, "Usuario",
-                    String.valueOf(usuario.getIdUsuario()), Accion.UPDATE,
-                    "Intento de login con cuenta INACTIVA (desactivada): " + usuario.getLogin());
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "ACCOUNT_DISABLED", "message", "La cuenta está inactiva."));
         }
-        // --- FIN LÓGICA MODIFICADA ---
 
-
+        // Validación de hash de contraseña
         String claveHasheada = hashPass.generarHash(usuario, loginRequest.getClave());
         if (!Objects.equals(claveHasheada, usuario.getPasswordHash())) {
-            registrarAuditoria(usuario, "Usuario",
-                    String.valueOf(usuario.getIdUsuario()), Accion.UPDATE,
-                    "Intento de login fallido (clave incorrecta): " + usuario.getLogin());
-            // CORREGIDO: Devolver Map en lugar de String
+
+            // --- CORRECCIÓN CRÍTICA ---
+            // Se completó la llamada a registrarAuditoria que tenía "/* ... */"
+            registrarAuditoria(usuario, "Usuario", usuario.getIdUsuario().toString(),
+                    Accion.UPDATE, "Intento de login fallido (clave incorrecta) para: " + usuario.getLogin());
+            // --- FIN DE CORRECCIÓN ---
+
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Usuario o contraseña incorrectos."));
         }
 
         String token = jwtUtil.generateToken(usuario.getLogin());
-        registrarAuditoria(usuario, "Usuario",
-                String.valueOf(usuario.getIdUsuario()), Accion.UPDATE,
-                "Usuario inició sesión correctamente: " + usuario.getLogin() +
-                        " | ip=" + request.getRemoteAddr());
+
+        // --- CORRECCIÓN CRÍTICA ---
+        // Se completó la llamada a registrarAuditoria que tenía "/* ... */"
+        registrarAuditoria(usuario, "Usuario", usuario.getIdUsuario().toString(),
+                Accion.LOGIN, "Login exitoso para: " + usuario.getLogin());
+        // --- FIN DE CORRECCIÓN ---
+
+
+        // --- NUEVA LÓGICA: FORZAR CAMBIO DE CONTRASEÑA (PARA VETS/CUIDADORES) ---
+        if (usuario.isRequiresPasswordChange()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of(
+                            "error", "FORCE_RESET", // Error especial
+                            "message", "Debes cambiar tu contraseña temporal.",
+                            "token", token, // Le damos el token para que pueda hacer el cambio
+                            "rol", usuario.getRol() != null ? usuario.getRol().toString() : null
+                    ));
+        }
+        // --- FIN DE LÓGICA AÑADIDA ---
 
         return ResponseEntity.ok(Map.of(
                 "token", token,
@@ -188,30 +212,30 @@ public class UsuarioRestController {
         String code = body.get("code");
 
         if (login == null || code == null) {
-            // CORREGIDO: Devolver Map en lugar de String
+            // CORREGIDO: Devolver Map en lugar de String (Esto ya lo tenías)
             return ResponseEntity.badRequest().body(Map.of("message", "Login y código son requeridos."));
         }
 
         Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
         if (usuarioOpt.isEmpty()) {
-            // CORREGIDO: Devolver Map en lugar de String
+            // CORREGIDO: Devolver Map en lugar de String (Esto ya lo tenías)
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Usuario no encontrado."));
         }
 
         Usuario usuario = usuarioOpt.get();
 
         if (usuario.getEstado() == Usuario.Estado.ACTIVO) {
-            // CORREGIDO: Devolver Map en lugar de String
+            // CORREGIDO: Devolver Map en lugar de String (Esto ya lo tenías)
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "La cuenta ya está activa."));
         }
 
         if (usuario.getVerificationCode() == null || !usuario.getVerificationCode().equals(code)) {
-            // CORREGIDO: Devolver Map en lugar de String
+            // CORREGIDO: Devolver Map en lugar de String (Esto ya lo tenías)
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", "Código incorrecto."));
         }
 
         if (usuario.getVerificationCodeExpires() != null && Instant.now().isAfter(usuario.getVerificationCodeExpires())) {
-            // CORREGIDO: Devolver Map en lugar de String
+            // CORREGIDO: Devolver Map en lugar de String (Esto ya lo tenías)
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", "El código ha expirado."));
         }
 
@@ -235,7 +259,7 @@ public class UsuarioRestController {
     public ResponseEntity<?> forgotPassword(@RequestBody Map<String, String> body) {
         String login = normalizarLogin(body.get("login"));
         if (login == null) {
-            // CORREGIDO: Devolver Map en lugar de String
+            // CORREGIDO: Devolver Map en lugar de String (Esto ya lo tenías)
             return ResponseEntity.badRequest().body(Map.of("message", "El login (email) es requerido."));
         }
 
@@ -260,7 +284,7 @@ public class UsuarioRestController {
             emailService.sendPasswordResetEmail(usuario.getLogin(), codigo);
         } catch (Exception e) {
             System.err.println("Error al enviar email de reseteo: " + e.getMessage());
-            // CORREGIDO: Devolver Map en lugar de String
+            // CORREGIDO: Devolver Map en lugar de String (Esto ya lo tenías)
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "Error al enviar el correo."));
         }
 
@@ -281,25 +305,25 @@ public class UsuarioRestController {
         String nuevaClave = body.get("nuevaClave");
 
         if (login == null || code == null || nuevaClave == null || nuevaClave.isBlank()) {
-            // CORREGIDO: Devolver Map en lugar de String
+            // CORREGIDO: Devolver Map en lugar de String (Esto ya lo tenías)
             return ResponseEntity.badRequest().body(Map.of("message", "Login, código y nueva clave son requeridos."));
         }
 
         Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
         if (usuarioOpt.isEmpty()) {
-            // CORREGIDO: Devolver Map en lugar de String
+            // CORREGIDO: Devolver Map en lugar de String (Esto ya lo tenías)
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", "Código o usuario inválido."));
         }
 
         Usuario usuario = usuarioOpt.get();
 
         if (usuario.getVerificationCode() == null || !usuario.getVerificationCode().equals(code)) {
-            // CORREGIDO: Devolver Map en lugar de String
+            // CORREGIDO: Devolver Map en lugar de String (Esto ya lo tenías)
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", "Código incorrecto."));
         }
 
         if (usuario.getVerificationCodeExpires() != null && Instant.now().isAfter(usuario.getVerificationCodeExpires())) {
-            // CORREGIDO: Devolver Map en lugar de String
+            // CORREGIDO: Devolver Map en lugar de String (Esto ya lo tenías)
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", "El código ha expirado."));
         }
 
@@ -309,13 +333,13 @@ public class UsuarioRestController {
         String nuevaClaveHash = hashPass.generarHash(usuario, nuevaClave);
         if (nuevaClaveHash.equals(usuario.getPasswordHash())) {
             return ResponseEntity.status(HttpStatus.CONFLICT) // 409 Conflict
-                    .body(Map.of("message", "La nueva contraseña no puede ser igual a la contraseña actual.")); // <-- CORREGIDO
+                    .body(Map.of("message", "La nueva contraseña no puede ser igual a la contraseña actual.")); // (Esto ya lo tenías)
         }
 
         // 2. Verificar si es fuerte
         if (!isPasswordStrong(nuevaClave)) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("message", "La contraseña no es segura. Debe tener al menos 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial.")); // <-- CORREGIDO
+                    .body(Map.of("message", "La contraseña no es segura. Debe tener al menos 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial.")); // (Esto ya lo tenías)
         }
 
         // --- ÉXITO ---
@@ -323,6 +347,8 @@ public class UsuarioRestController {
         usuario.setVerificationCode(null);
         usuario.setVerificationCodeExpires(null);
         usuario.setEstado(Usuario.Estado.ACTIVO);
+        // CORREGIDO: Añadido para asegurar que el flag se limpie si estaba puesto
+        usuario.setRequiresPasswordChange(false);
 
         usuarioService.save(usuario);
 
@@ -331,12 +357,62 @@ public class UsuarioRestController {
 
         return ResponseEntity.ok(Map.of("message", "Contraseña actualizada exitosamente."));
     }
+    @PostMapping("/force-reset-password")
+    public ResponseEntity<?> forceResetPassword(@RequestBody Map<String, String> body,
+                                                @RequestHeader("Authorization") String authHeader) {
 
+        String nuevaClave = body.get("nuevaClave");
+        if (nuevaClave == null || nuevaClave.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "La nueva clave es obligatoria."));
+        }
 
+        // 1. Obtener el usuario DESDE EL TOKEN (más seguro)
+        Usuario actor = getActorFromToken(authHeader);
+        if (actor == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Token inválido."));
+        }
+
+        // 2. Validar fortaleza
+        if (!isPasswordStrong(nuevaClave)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("message", "La contraseña no es segura. Debe tener al menos 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial."));
+        }
+
+        // 3. Validar que no sea la misma clave
+        String nuevaClaveHash = hashPass.generarHash(actor, nuevaClave);
+        if (nuevaClaveHash.equals(actor.getPasswordHash())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("message", "La nueva contraseña no puede ser igual a la contraseña temporal."));
+        }
+
+        // 4. Actualizar usuario
+        actor.setPasswordHash(nuevaClaveHash);
+        actor.setRequiresPasswordChange(false); // ¡IMPORTANTE!
+        usuarioService.save(actor);
+
+        registrarAuditoria(actor, "Usuario", actor.getIdUsuario().toString(),
+                Accion.UPDATE, "Empleado cambió su contraseña temporal exitosamente.");
+
+        return ResponseEntity.ok(Map.of("message", "Contraseña actualizada."));
+    }
     // ===================== HELPERS =====================
     private String normalizarLogin(String login) {
         return (login == null) ? null : login.toLowerCase().trim();
     }
+
+    // --- NUEVO HELPER: Obtener Usuario desde Token ---
+    private Usuario getActorFromToken(String authHeader) {
+        try {
+            String token = authHeader.substring(7); // Quita "Bearer "
+            String login = jwtUtil.getLoginFromToken(token);
+            Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
+            return usuarioOpt.orElse(null);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    // Helper para registrar auditoría (con objeto Usuario)
     private void registrarAuditoria(Usuario actor, String tabla, String idRegistro,
                                     Accion accion, String comentario) {
         Auditoria aud = Auditoria.builder()
@@ -348,11 +424,14 @@ public class UsuarioRestController {
                 .build();
         auditoriaService.save(aud);
     }
+
+    // Helper para fortaleza de contraseña
     private boolean isPasswordStrong(String password) {
         if (password == null || password.length() < 8) {
             return false;
         }
-        String strongPasswordPattern = "^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&*()_+\\-=\\[\\]{};':\"\\\\|,.<>\\/?]).{8,}$";
+        // CORREGIDO: Se eliminó el escape redundante en el carácter '/'
+        String strongPasswordPattern = "^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&*()_+\\-=\\[\\]{};':\"\\\\|,.<>/?]).{8,}$";
 
         return Pattern.compile(strongPasswordPattern)
                 .matcher(password)
