@@ -1,12 +1,15 @@
 package co.edu.unbosque.veterinaria.controller;
 
 import co.edu.unbosque.veterinaria.entity.Auditoria;
+import co.edu.unbosque.veterinaria.entity.Auditoria.Accion;
 import co.edu.unbosque.veterinaria.entity.SolicitudAdopcion;
-import co.edu.unbosque.veterinaria.entity.Usuario; // <-- 1. IMPORTAR
+import co.edu.unbosque.veterinaria.entity.Usuario;
+import co.edu.unbosque.veterinaria.entity.Adoptante;
 import co.edu.unbosque.veterinaria.service.api.AuditoriaServiceAPI;
 import co.edu.unbosque.veterinaria.service.api.SolicitudAdopcionServiceAPI;
-import co.edu.unbosque.veterinaria.service.api.UsuarioServiceAPI; // <-- 2. IMPORTAR
-import co.edu.unbosque.veterinaria.utils.JwtUtil; // <-- 3. IMPORTAR
+import co.edu.unbosque.veterinaria.service.api.UsuarioServiceAPI;
+import co.edu.unbosque.veterinaria.service.api.AdoptanteServiceAPI; // <-- DEPENDENCIA AÑADIDA
+import co.edu.unbosque.veterinaria.utils.JwtUtil;
 import co.edu.unbosque.veterinaria.utils.ResourceNotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.*;
@@ -22,14 +25,13 @@ public class SolicitudAdopcionRestController {
 
     @Autowired private SolicitudAdopcionServiceAPI service;
     @Autowired private AuditoriaServiceAPI auditoriaService;
-
-    // --- 4. DEPENDENCIAS AÑADIDAS ---
     @Autowired private JwtUtil jwtUtil;
     @Autowired private UsuarioServiceAPI usuarioService;
+    @Autowired private AdoptanteServiceAPI adoptanteService; // <-- INYECCIÓN DE DEPENDENCIA
+
 
     // ================== CRUD BÁSICO ==================
 
-    // ... (getAll y get sin cambios) ...
     @GetMapping("/getAll")
     public List<SolicitudAdopcion> getAll() {
         return service.getAll();
@@ -41,13 +43,11 @@ public class SolicitudAdopcionRestController {
         return ResponseEntity.ok(s);
     }
 
-    // --- 5. MÉTODO 'save' ACTUALIZADO ---
     @PostMapping("/save")
     public ResponseEntity<?> save(@RequestBody SolicitudAdopcion s,
-                                  @RequestHeader("Authorization") String authHeader) { // <-- AÑADIDO
+                                  @RequestHeader("Authorization") String authHeader) {
         boolean esNuevo = (s.getIdSolicitud() == null);
 
-        // ... (Validaciones y defaults sin cambios) ...
         if (s.getAdoptante() == null || s.getAdoptante().getIdAdoptante() == null) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("debes enviar el adoptante con idAdoptante");
         }
@@ -64,16 +64,14 @@ public class SolicitudAdopcionRestController {
 
         SolicitudAdopcion guardada = service.save(s);
 
-        // --- 6. LLAMADA AL HELPER ACTUALIZADA ---
         registrarAuditoria(
-                authHeader, // <-- AÑADIDO
+                authHeader,
                 "Solicitud_Adopcion",
                 String.valueOf(guardada.getIdSolicitud()),
                 esNuevo ? Auditoria.Accion.INSERT : Auditoria.Accion.UPDATE,
                 esNuevo ? "Se creó solicitud de adopción" : "Se actualizó solicitud de adopción"
         );
 
-        // ... (Respuesta liviana sin cambios) ...
         Map<String,Object> resp = new LinkedHashMap<>();
         resp.put("idSolicitud", guardada.getIdSolicitud());
         resp.put("estado", guardada.getEstado() != null ? guardada.getEstado().name() : null);
@@ -84,19 +82,17 @@ public class SolicitudAdopcionRestController {
         return ResponseEntity.ok(resp);
     }
 
-    // --- 7. MÉTODO 'delete' ACTUALIZADO ---
     @DeleteMapping("/{id}")
     public ResponseEntity<?> delete(@PathVariable Integer id,
-                                    @RequestHeader("Authorization") String authHeader) { // <-- AÑADIDO
+                                    @RequestHeader("Authorization") String authHeader) {
         SolicitudAdopcion s = service.get(id);
         if (s == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("no existe la solicitud con id " + id);
         }
         service.delete(id);
 
-        // --- 8. LLAMADA AL HELPER ACTUALIZADA ---
         registrarAuditoria(
-                authHeader, // <-- AÑADIDO
+                authHeader,
                 "Solicitud_Adopcion",
                 String.valueOf(id),
                 Auditoria.Accion.DELETE,
@@ -106,23 +102,20 @@ public class SolicitudAdopcionRestController {
         return ResponseEntity.ok().build();
     }
 
-    // --- 9. MÉTODO 'aprobar' ACTUALIZADO ---
     @PostMapping("/{id}/aprobar")
     public ResponseEntity<?> aprobar(@PathVariable Integer id,
-                                     @RequestHeader("Authorization") String authHeader) { // <-- AÑADIDO
+                                     @RequestHeader("Authorization") String authHeader) {
         try {
             SolicitudAdopcion aprobada = service.aprobarYGenerarAdopcion(id);
 
-            // ... (Respuesta liviana sin cambios) ...
             Map<String, Object> resp = new LinkedHashMap<>();
             resp.put("idSolicitud", aprobada.getIdSolicitud());
             resp.put("estado", aprobada.getEstado() != null ? aprobada.getEstado().toString() : null);
             resp.put("adoptanteId", aprobada.getAdoptante() != null ? aprobada.getAdoptante().getIdAdoptante() : null);
             resp.put("mascotaId", aprobada.getMascota() != null ? aprobada.getMascota().getIdMascota() : null);
 
-            // --- 10. LLAMADA AL HELPER ACTUALIZADA ---
             registrarAuditoria(
-                    authHeader, // <-- AÑADIDO
+                    authHeader,
                     "Solicitud_Adopcion",
                     String.valueOf(aprobada.getIdSolicitud()),
                     Auditoria.Accion.UPDATE,
@@ -135,23 +128,44 @@ public class SolicitudAdopcionRestController {
         }
     }
 
-    // --- 11. HELPER DE AUDITORÍA AÑADIDO ---
-    private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Auditoria.Accion accion, String comentario) {
-        Usuario actor = null;
+    // --- ⬇️ ENDPOINT NUEVO PARA EL ADOPTANTE LOGUEADO ⬇️ ---
+    @GetMapping("/by-adoptante/me")
+    public ResponseEntity<?> getMisSolicitudes(@RequestHeader("Authorization") String authHeader) {
+        Usuario actor = getActorFromToken(authHeader);
+        if (actor == null || actor.getRol() != Usuario.Rol.AP) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Acceso denegado. Solo Adoptantes."));
+        }
+
+        Optional<Adoptante> adoptanteOpt = adoptanteService.findByUsuario(actor);
+        if (adoptanteOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Perfil de adoptante no encontrado."));
+        }
+
+        Integer idAdoptante = adoptanteOpt.get().getIdAdoptante();
+        // Llama al nuevo método en el servicio para obtener las solicitudes del adoptante
+        List<SolicitudAdopcion> solicitudes = service.findByAdoptanteId(idAdoptante);
+
+        return ResponseEntity.ok(solicitudes);
+    }
+
+
+    // --- HELPER DE AUDITORÍA ---
+    private Usuario getActorFromToken(String authHeader) {
         try {
-            // Extraer el usuario del token
             String token = authHeader.substring(7); // Quita "Bearer "
             String login = jwtUtil.getLoginFromToken(token);
             Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
-            if (usuarioOpt.isPresent()) {
-                actor = usuarioOpt.get();
-            }
+            return usuarioOpt.orElse(null);
         } catch (Exception e) {
-            System.err.println("Error al obtener usuario para auditoría: " + e.getMessage());
+            return null;
         }
+    }
+
+    private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Accion accion, String comentario) {
+        Usuario actor = getActorFromToken(authHeader);
 
         Auditoria aud = Auditoria.builder()
-                .usuario(actor) // <-- Se asigna el actor (o null si falló)
+                .usuario(actor)
                 .tablaAfectada(tabla)
                 .idRegistro(idRegistro)
                 .accion(accion)

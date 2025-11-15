@@ -1,3 +1,4 @@
+// Archivo: src/main/java/co/edu/unbosque/veterinaria/service/impl/SolicitudAdopcionServiceImpl.java
 package co.edu.unbosque.veterinaria.service.impl;
 
 import co.edu.unbosque.veterinaria.entity.Adopcion;
@@ -14,6 +15,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.util.List; // <-- AÑADIR
 
 @Service
 public class SolicitudAdopcionServiceImpl
@@ -24,12 +26,19 @@ public class SolicitudAdopcionServiceImpl
     @Autowired private AdopcionRepository adopcionRepo;
     @Autowired private MascotaRepository mascotaRepo;
 
-    // Debe ser public y devolver un JpaRepository
     @Override
     public JpaRepository<SolicitudAdopcion, Integer> getDao() {
         return repo;
     }
 
+    // --- ⬇️ IMPLEMENTACIÓN NECESARIA ⬇️ ---
+    @Override
+    public List<SolicitudAdopcion> findByAdoptanteId(Integer idAdoptante) {
+        // Usa el método del repositorio
+        return repo.findByAdoptante_IdAdoptante(idAdoptante);
+    }
+
+    // ... (El resto del código aprobarYGenerarAdopcion sigue igual) ...
     @Override
     @Transactional
     public SolicitudAdopcion aprobarYGenerarAdopcion(Integer idSolicitud) {
