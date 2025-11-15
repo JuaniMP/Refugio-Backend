@@ -7,6 +7,7 @@ import co.edu.unbosque.veterinaria.utils.GenericServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.stereotype.Service;
+import java.util.List;
 
 @Service
 public class AplicacionVacunaServiceImpl extends GenericServiceImpl<AplicacionVacuna, Integer>
@@ -18,5 +19,9 @@ public class AplicacionVacunaServiceImpl extends GenericServiceImpl<AplicacionVa
     @Override
     public CrudRepository<AplicacionVacuna, Integer> getDao() {
         return aplicacionVacunaRepository;
+    }
+    @Override
+    public List<AplicacionVacuna> findByIdHistorial(Integer idHistorial) {
+        return aplicacionVacunaRepository.findByHistorial_IdHistorialOrderByFechaDesc(idHistorial);
     }
 }

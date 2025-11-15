@@ -13,7 +13,7 @@ import co.edu.unbosque.veterinaria.utils.ResourceNotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
-
+import java.util.Map;
 import java.util.List;
 import java.util.Optional; // <-- 4. IMPORTAR
 
@@ -78,6 +78,42 @@ public class HistorialMedicoRestController {
         );
 
         return ResponseEntity.ok(guardado);
+    }
+    // --- ⬇️ ENDPOINT NUEVO A AÑADIR ⬇️ ---
+    @GetMapping("/by-mascota/{idMascota}")
+    public ResponseEntity<?> getHistorialPorMascota(
+            @PathVariable Integer idMascota,
+            @RequestHeader("Authorization") String authHeader) {
+
+        // (Validación simple de token)
+        if (getActorFromToken(authHeader) == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Token inválido."));
+        }
+
+        Optional<HistorialMedico> historialOpt = service.findByMascotaId(idMascota);
+        if (historialOpt.isEmpty()) {
+            // No es un error, creamos uno nuevo para esta mascota
+            HistorialMedico nuevoHistorial = new HistorialMedico();
+            nuevoHistorial.setMascota(new co.edu.unbosque.veterinaria.entity.Mascota());
+            nuevoHistorial.getMascota().setIdMascota(idMascota);
+            // Guardamos un historial vacío
+            HistorialMedico historialGuardado = service.save(nuevoHistorial);
+            return ResponseEntity.ok(historialGuardado);
+        }
+
+        return ResponseEntity.ok(historialOpt.get());
+    }
+
+    // --- ⬇️ HELPER A AÑADIR (si no lo tienes ya) ⬇️ ---
+    private Usuario getActorFromToken(String authHeader) {
+        try {
+            String token = authHeader.substring(7); // Quita "Bearer "
+            String login = jwtUtil.getLoginFromToken(token);
+            Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
+            return usuarioOpt.orElse(null);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     // ================= helpers internos =================

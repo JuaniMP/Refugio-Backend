@@ -11,7 +11,9 @@ import co.edu.unbosque.veterinaria.service.api.UsuarioServiceAPI; // <-- 2. IMPO
 import co.edu.unbosque.veterinaria.service.api.VeterinarioServiceAPI;
 import co.edu.unbosque.veterinaria.utils.JwtUtil; // <-- 3. IMPORTAR
 import co.edu.unbosque.veterinaria.utils.ResourceNotFoundException;
-
+import java.util.Map;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -118,6 +120,36 @@ public class VeterinarioRestController {
         } catch (DataIntegrityViolationException ex) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body("no se puede eliminar: el registro tiene referencias");
+        }
+    }
+    @GetMapping("/me")
+    public ResponseEntity<?> getMiPerfil(@RequestHeader(value = "Authorization", required = false) String authHeader) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Token no válido o ausente."));
+        }
+
+        Usuario actor = getActorFromToken(authHeader); // Re-usa tu helper
+        if (actor == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Token inválido."));
+        }
+
+        Optional<Veterinario> vetOpt = service.findByUsuario(actor);
+        if (vetOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Perfil de veterinario no encontrado."));
+        }
+
+        return ResponseEntity.ok(vetOpt.get());
+    }
+
+    // --- ⬇️ HELPER A AÑADIR (si no lo tienes ya) ⬇️ ---
+    private Usuario getActorFromToken(String authHeader) {
+        try {
+            String token = authHeader.substring(7); // Quita "Bearer "
+            String login = jwtUtil.getLoginFromToken(token);
+            Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
+            return usuarioOpt.orElse(null);
+        } catch (Exception e) {
+            return null;
         }
     }
 

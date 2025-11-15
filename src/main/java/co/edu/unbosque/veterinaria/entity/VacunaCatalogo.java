@@ -14,4 +14,9 @@ public class VacunaCatalogo {
 
     @Column(name = "nombre", nullable = false, unique = true, length = 80)
     private String nombre;
+
+    // --- ⬇️ CAMPO NUEVO A AÑADIR ⬇️ ---
+    @Column(name = "estado", length = 10, nullable = false)
+    @Builder.Default // Asegura que el valor por defecto se use con @Builder
+    private String estado = "ACTIVO";
 }

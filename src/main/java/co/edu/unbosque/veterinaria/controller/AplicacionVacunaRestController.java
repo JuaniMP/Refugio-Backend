@@ -3,11 +3,13 @@ package co.edu.unbosque.veterinaria.controller;
 import co.edu.unbosque.veterinaria.entity.AplicacionVacuna;
 import co.edu.unbosque.veterinaria.entity.Auditoria;
 import co.edu.unbosque.veterinaria.entity.Auditoria.Accion;
-import co.edu.unbosque.veterinaria.entity.Usuario; // <-- 1. IMPORTAR
+import co.edu.unbosque.veterinaria.entity.Usuario;
+import co.edu.unbosque.veterinaria.entity.Veterinario; // <-- AÑADIDO
 import co.edu.unbosque.veterinaria.service.api.AplicacionVacunaServiceAPI;
 import co.edu.unbosque.veterinaria.service.api.AuditoriaServiceAPI;
-import co.edu.unbosque.veterinaria.service.api.UsuarioServiceAPI; // <-- 2. IMPORTAR
-import co.edu.unbosque.veterinaria.utils.JwtUtil; // <-- 3. IMPORTAR
+import co.edu.unbosque.veterinaria.service.api.UsuarioServiceAPI;
+import co.edu.unbosque.veterinaria.service.api.VeterinarioServiceAPI; // <-- AÑADIDO
+import co.edu.unbosque.veterinaria.utils.JwtUtil;
 import co.edu.unbosque.veterinaria.utils.ResourceNotFoundException;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,8 +18,9 @@ import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.Map; // <-- AÑADIDO
 import java.util.List;
-import java.util.Optional; // <-- 4. IMPORTAR
+import java.util.Optional;
 
 @CrossOrigin(origins = "*")
 @RestController
@@ -26,10 +29,10 @@ public class AplicacionVacunaRestController {
 
     @Autowired private AplicacionVacunaServiceAPI service;
     @Autowired private AuditoriaServiceAPI auditoriaService;
-
-    // --- 5. DEPENDENCIAS AÑADIDAS ---
     @Autowired private JwtUtil jwtUtil;
     @Autowired private UsuarioServiceAPI usuarioService;
+    // --- ⬇️ DEPENDENCIA NECESARIA ⬇️ ---
+    @Autowired private VeterinarioServiceAPI veterinarioService;
 
 
     // ... (getAll y get sin cambios) ...
@@ -45,12 +48,26 @@ public class AplicacionVacunaRestController {
     }
 
 
-    // --- 6. MÉTODO 'save' ACTUALIZADO ---
     @PostMapping("/save")
     public ResponseEntity<?> save(@RequestBody AplicacionVacuna a,
-                                  @RequestHeader("Authorization") String authHeader) { // <-- AÑADIDO
+                                  @RequestHeader("Authorization") String authHeader) {
 
-        // ... (validaciones existentes sin cambios) ...
+        // --- 1. OBTENER EL ACTOR Y EL EMPLEADO ASOCIADO ---
+        Usuario actor = getActorFromToken(authHeader);
+        if (actor == null || actor.getRol() != Usuario.Rol.V) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "Acceso denegado. Solo Veterinarios pueden registrar aplicaciones."));
+        }
+
+        Optional<Veterinario> vetOpt = veterinarioService.findByUsuario(actor);
+        if (vetOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Perfil de veterinario no encontrado para este usuario."));
+        }
+
+        // El Empleado (que es el Veterinario en este contexto)
+        co.edu.unbosque.veterinaria.entity.Empleado empleado = vetOpt.get().getEmpleado();
+
+
+        // ... (validations) ...
         if (a.getIdAplicacion() != null) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body("no se permite actualizar una aplicacion de vacuna existente; no debes enviar idAplicacion");
@@ -67,11 +84,21 @@ public class AplicacionVacunaRestController {
             a.setFecha(LocalDate.now());
         }
 
-        AplicacionVacuna guardada = service.save(a);
+        // --- 2. ASIGNAR EL EMPLEADO ANTES DE GUARDAR (LA CLAVE) ---
+        a.setEmpleado(empleado);
 
-        // registrar auditoría
+        AplicacionVacuna guardada;
+        try {
+            guardada = service.save(a);
+        } catch (DataIntegrityViolationException ex) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body("no se pudo guardar: verifique si la vacuna fue aplicada o restricción de BD");
+        }
+
+
+        // ... (rest of the audit code is fine) ...
         registrarAuditoria(
-                authHeader, // <-- AÑADIDO
+                authHeader,
                 "Aplicacion_Vacuna",
                 guardada.getIdAplicacion().toString(),
                 Accion.INSERT,
@@ -83,10 +110,23 @@ public class AplicacionVacunaRestController {
         return ResponseEntity.ok(guardada);
     }
 
-    // --- 7. MÉTODO 'delete' ACTUALIZADO ---
+    // ... (Métodos by-historial y delete sin cambios) ...
+    @GetMapping("/by-historial/{idHistorial}")
+    public ResponseEntity<?> getVacunasPorHistorial(
+            @PathVariable Integer idHistorial,
+            @RequestHeader("Authorization") String authHeader) {
+
+        if (getActorFromToken(authHeader) == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Token inválido."));
+        }
+
+        List<AplicacionVacuna> aplicaciones = service.findByIdHistorial(idHistorial);
+        return ResponseEntity.ok(aplicaciones);
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<?> delete(@PathVariable Integer id,
-                                    @RequestHeader("Authorization") String authHeader) { // <-- AÑADIDO
+                                    @RequestHeader("Authorization") String authHeader) {
         AplicacionVacuna a = service.get(id);
         if (a == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -96,7 +136,7 @@ public class AplicacionVacunaRestController {
         try {
             service.delete(id);
             registrarAuditoria(
-                    authHeader, // <-- AÑADIDO
+                    authHeader,
                     "Aplicacion_Vacuna",
                     id.toString(),
                     Accion.DELETE,
@@ -109,23 +149,22 @@ public class AplicacionVacunaRestController {
         }
     }
 
-    // --- 8. HELPER DE AUDITORÍA ACTUALIZADO ---
-    private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Accion accion, String comentario) {
-        Usuario actor = null;
+    private Usuario getActorFromToken(String authHeader) {
         try {
-            // Extraer el usuario del token
             String token = authHeader.substring(7); // Quita "Bearer "
             String login = jwtUtil.getLoginFromToken(token);
             Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
-            if (usuarioOpt.isPresent()) {
-                actor = usuarioOpt.get();
-            }
+            return usuarioOpt.orElse(null);
         } catch (Exception e) {
-            System.err.println("Error al obtener usuario para auditoría: " + e.getMessage());
+            return null;
         }
+    }
+
+    private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Accion accion, String comentario) {
+        Usuario actor = getActorFromToken(authHeader);
 
         Auditoria aud = Auditoria.builder()
-                .usuario(actor) // <-- Se asigna el actor (o null si falló)
+                .usuario(actor)
                 .tablaAfectada(tabla)
                 .idRegistro(idRegistro)
                 .accion(accion)
