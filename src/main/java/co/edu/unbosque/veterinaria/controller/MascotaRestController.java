@@ -13,8 +13,14 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.transaction.annotation.Transactional;
+import co.edu.unbosque.veterinaria.entity.Veterinario; // <-- AÑADIR
+import co.edu.unbosque.veterinaria.service.api.VeterinarioServiceAPI; // <-- AÑADIR
+import org.springframework.transaction.annotation.Transactional;import co.edu.unbosque.veterinaria.entity.Veterinario; // <-- AÑADIR
+import co.edu.unbosque.veterinaria.service.api.VeterinarioServiceAPI; // <-- AÑADIR
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional; // <-- 4. IMPORTAR
 
 @CrossOrigin(origins = "*")
@@ -28,6 +34,8 @@ public class MascotaRestController {
     // --- 5. DEPENDENCIAS AÑADIDAS ---
     @Autowired private JwtUtil jwtUtil;
     @Autowired private UsuarioServiceAPI usuarioService;
+
+    @Autowired private VeterinarioServiceAPI veterinarioService;
 
     @GetMapping("/getAll")
     public List<Mascota> getAll() { return service.getAll(); }
@@ -129,6 +137,55 @@ public class MascotaRestController {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    @Transactional(readOnly = true) // Es solo lectura
+    @GetMapping("/secure-search/{idMascota}")
+    public ResponseEntity<?> secureSearchMascota(
+            @PathVariable Integer idMascota,
+            @RequestHeader("Authorization") String authHeader) {
+
+        Usuario actor = getActorFromToken(authHeader);
+        if (actor == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Token inválido."));
+        }
+        if (actor.getRol() != Usuario.Rol.V) { // Solo para Vets
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "Acceso denegado."));
+        }
+
+        // 1. Buscar la mascota
+        Mascota mascota = service.get(idMascota);
+        if (mascota == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Mascota no encontrada con ID: " + idMascota));
+        }
+
+        // 2. Buscar el perfil del veterinario
+        Optional<Veterinario> vetOpt = veterinarioService.findByUsuario(actor);
+        if (vetOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "No se encontró tu perfil de veterinario."));
+        }
+
+        // 3. Aplicar regla de especialidad
+        String especialidad = vetOpt.get().getEspecialidad().toLowerCase();
+        String especieMascota = mascota.getRaza().getEspecie().getNombre().toLowerCase();
+
+        if (especialidad.contains("general")) {
+            // "Cirugía General" puede ver todo
+            return ResponseEntity.ok(mascota);
+        }
+
+        if (especialidad.contains("felina") && !especieMascota.equals("gato")) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Tu especialidad es '" + vetOpt.get().getEspecialidad() + "'. Solo puedes ver Gatos."));
+        }
+
+        if (especialidad.contains("canina") && !especieMascota.equals("perro")) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Tu especialidad es '" + vetOpt.get().getEspecialidad() + "'. Solo puedes ver Perros."));
+        }
+
+        // Si pasó los filtros, devuelve la mascota
+        return ResponseEntity.ok(mascota);
     }
 
     // --- 10. HELPER DE AUDITORÍA ACTUALIZADO ---
