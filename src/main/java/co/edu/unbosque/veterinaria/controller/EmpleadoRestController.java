@@ -1,5 +1,6 @@
 package co.edu.unbosque.veterinaria.controller;
 
+import co.edu.unbosque.veterinaria.security.AuditoriaRegistrador;
 import co.edu.unbosque.veterinaria.entity.Auditoria;
 import co.edu.unbosque.veterinaria.entity.Auditoria.Accion;
 import co.edu.unbosque.veterinaria.entity.Empleado;
@@ -30,10 +31,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
-@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping("/api/empleados")
 public class EmpleadoRestController {
+
+    @Autowired private AuditoriaRegistrador auditoria;
 
     // --- Dependencias existentes ---
     @Autowired private EmpleadoServiceAPI service;
@@ -48,8 +50,6 @@ public class EmpleadoRestController {
     @Autowired private HashPass hashPass;
     @Autowired private EmailService emailService;
     @Autowired private RefugioServiceAPI refugioService;
-
-    // --- MÉTODOS EXISTENTES (SIN CAMBIOS) ---
 
     @GetMapping("/getAll")
     public List<Empleado> getAll() {
@@ -105,7 +105,7 @@ public class EmpleadoRestController {
                 ? "se creo empleado " + safeNombre(guardado) + " id=" + guardado.getIdEmpleado()
                 : "se actualizo empleado " + safeNombre(guardado) + " id=" + guardado.getIdEmpleado();
 
-        registrarAuditoria(
+        auditoria.registrar(
                 authHeader,
                 "Empleado",
                 guardado.getIdEmpleado() != null ? guardado.getIdEmpleado().toString() : null,
@@ -127,7 +127,7 @@ public class EmpleadoRestController {
         try {
             service.delete(id);
 
-            registrarAuditoria(
+            auditoria.registrar(
                     authHeader,
                     "Empleado",
                     id.toString(),
@@ -145,30 +145,6 @@ public class EmpleadoRestController {
     private String safeNombre(Empleado e) {
         return (e.getNombre() == null || e.getNombre().isBlank()) ? "(sin nombre)" : e.getNombre();
     }
-
-    private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Accion accion, String comentario) {
-        Usuario actor = null;
-        try {
-            String token = authHeader.substring(7);
-            String login = jwtUtil.getLoginFromToken(token);
-            Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
-            if (usuarioOpt.isPresent()) {
-                actor = usuarioOpt.get();
-            }
-        } catch (Exception e) {
-            System.err.println("Error al obtener usuario para auditoría: " + e.getMessage());
-        }
-
-        Auditoria aud = Auditoria.builder()
-                .usuario(actor)
-                .tablaAfectada(tabla)
-                .idRegistro(idRegistro)
-                .accion(accion)
-                .comentarioAuditoria(comentario)
-                .build();
-        auditoriaService.save(aud);
-    }
-
 
     // --- ⬇️ CÓDIGO NUEVO CORREGIDO ⬇️ ---
 
@@ -197,7 +173,7 @@ public class EmpleadoRestController {
             nuevoUsuario.setRol(Usuario.Rol.C); // Rol Cuidador
             nuevoUsuario.setEstado(Usuario.Estado.ACTIVO);
             nuevoUsuario.setRequiresPasswordChange(true);
-            nuevoUsuario.setPasswordHash(hashPass.generarHash(nuevoUsuario, tempPassword));
+            nuevoUsuario.setPasswordHash(hashPass.hashear(tempPassword));
             Usuario usuarioGuardado = usuarioService.save(nuevoUsuario);
 
             // 3. Crear Empleado
@@ -226,7 +202,7 @@ public class EmpleadoRestController {
             emailService.sendTemporaryPasswordEmail(login, tempPassword);
 
             // 6. Auditoría
-            registrarAuditoria(authHeader, "Empleado", empleadoGuardado.getIdEmpleado().toString(), Accion.INSERT, "Se creó Empleado (Cuidador): " + nombre);
+            auditoria.registrar(authHeader, "Empleado", empleadoGuardado.getIdEmpleado().toString(), Accion.INSERT, "Se creó Empleado (Cuidador): " + nombre);
 
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("message", "Cuidador creado exitosamente."));
 
@@ -236,7 +212,6 @@ public class EmpleadoRestController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "Error interno: " + e.getMessage()));
         }
     }
-
 
     @Transactional
     @PostMapping("/create-vet")
@@ -263,7 +238,7 @@ public class EmpleadoRestController {
             nuevoUsuario.setRol(Usuario.Rol.V); // Rol Veterinario
             nuevoUsuario.setEstado(Usuario.Estado.ACTIVO);
             nuevoUsuario.setRequiresPasswordChange(true);
-            nuevoUsuario.setPasswordHash(hashPass.generarHash(nuevoUsuario, tempPassword));
+            nuevoUsuario.setPasswordHash(hashPass.hashear(tempPassword));
             Usuario usuarioGuardado = usuarioService.save(nuevoUsuario);
 
             // 3. Crear Empleado
@@ -292,7 +267,7 @@ public class EmpleadoRestController {
             emailService.sendTemporaryPasswordEmail(login, tempPassword);
 
             // 6. Auditoría
-            registrarAuditoria(authHeader, "Empleado", empleadoGuardado.getIdEmpleado().toString(), Accion.INSERT, "Se creó Empleado (Veterinario): " + nombre);
+            auditoria.registrar(authHeader, "Empleado", empleadoGuardado.getIdEmpleado().toString(), Accion.INSERT, "Se creó Empleado (Veterinario): " + nombre);
 
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("message", "Veterinario creado exitosamente."));
 
@@ -306,5 +281,3 @@ public class EmpleadoRestController {
     }
 
 }
-
-// --- FIN DE LA CLASE EmpleadoRestController ---

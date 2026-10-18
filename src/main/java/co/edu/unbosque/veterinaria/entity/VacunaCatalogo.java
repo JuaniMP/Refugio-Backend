@@ -6,7 +6,7 @@ import lombok.*;
 @Entity
 @Table(name = "Vacuna_Catalogo")
 @Data @NoArgsConstructor @AllArgsConstructor @Builder
-public class VacunaCatalogo {
+public class VacunaCatalogo implements Catalogo {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id_vacuna")
@@ -19,4 +19,9 @@ public class VacunaCatalogo {
     @Column(name = "estado", length = 10, nullable = false)
     @Builder.Default // Asegura que el valor por defecto se use con @Builder
     private String estado = "ACTIVO";
+
+    @Override
+    public Integer idCatalogo() {
+        return idVacuna;
+    }
 }

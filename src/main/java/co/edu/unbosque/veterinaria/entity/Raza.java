@@ -6,7 +6,7 @@ import lombok.*;
 @Entity
 @Table(name = "Raza")
 @Data @NoArgsConstructor @AllArgsConstructor @Builder
-public class Raza {
+public class Raza implements Catalogo {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id_raza")
@@ -23,4 +23,9 @@ public class Raza {
     @Column(name = "estado", length = 10, nullable = false)
     @Builder.Default
     private String estado = "ACTIVO";
+
+    @Override
+    public Integer idCatalogo() {
+        return idRaza;
+    }
 }
