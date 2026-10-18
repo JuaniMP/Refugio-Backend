@@ -1,15 +1,17 @@
 package co.edu.unbosque.veterinaria.controller;
 
+import co.edu.unbosque.veterinaria.security.AuditoriaRegistrador;
+import co.edu.unbosque.veterinaria.security.SesionActual;
 import co.edu.unbosque.veterinaria.entity.Auditoria;
 import co.edu.unbosque.veterinaria.entity.Auditoria.Accion;
 import co.edu.unbosque.veterinaria.entity.Empleado;
-import co.edu.unbosque.veterinaria.entity.Usuario; // <-- 1. IMPORTAR
+import co.edu.unbosque.veterinaria.entity.Usuario;
 import co.edu.unbosque.veterinaria.entity.Veterinario;
 import co.edu.unbosque.veterinaria.service.api.AuditoriaServiceAPI;
 import co.edu.unbosque.veterinaria.service.api.EmpleadoServiceAPI;
-import co.edu.unbosque.veterinaria.service.api.UsuarioServiceAPI; // <-- 2. IMPORTAR
+import co.edu.unbosque.veterinaria.service.api.UsuarioServiceAPI;
 import co.edu.unbosque.veterinaria.service.api.VeterinarioServiceAPI;
-import co.edu.unbosque.veterinaria.utils.JwtUtil; // <-- 3. IMPORTAR
+import co.edu.unbosque.veterinaria.utils.JwtUtil;
 import co.edu.unbosque.veterinaria.utils.ResourceNotFoundException;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -21,18 +23,19 @@ import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Optional; // <-- 4. IMPORTAR
+import java.util.Optional;
 
-@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping("/api/veterinarios")
 public class VeterinarioRestController {
+
+    @Autowired private AuditoriaRegistrador auditoria;
+    @Autowired private SesionActual sesionActual;
 
     @Autowired private VeterinarioServiceAPI service;
     @Autowired private EmpleadoServiceAPI empleadoService;
     @Autowired private AuditoriaServiceAPI auditoriaService;
 
-    // --- 5. DEPENDENCIAS AÑADIDAS ---
     @Autowired private JwtUtil jwtUtil;
     @Autowired private UsuarioServiceAPI usuarioService;
 
@@ -46,12 +49,10 @@ public class VeterinarioRestController {
         return ResponseEntity.ok(v);
     }
 
-    // --- 6. MÉTODO 'save' ACTUALIZADO ---
     @PostMapping("/save")
     public ResponseEntity<?> save(@RequestBody Veterinario body,
-                                  @RequestHeader("Authorization") String authHeader) { // <-- AÑADIDO
+                                  @RequestHeader("Authorization") String authHeader) {
 
-        // ... (validaciones existentes sin cambios) ...
         if (body.getEmpleado() == null || body.getEmpleado().getIdEmpleado() == null) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body("debes enviar el empleado con su id");
@@ -79,9 +80,8 @@ public class VeterinarioRestController {
         try {
             Veterinario guardado = service.save(target);
 
-            // --- 7. LLAMADA AL HELPER ACTUALIZADA ---
-            registrarAuditoria(
-                    authHeader, // <-- AÑADIDO
+            auditoria.registrar(
+                    authHeader,
                     "Veterinario",
                     guardado.getIdEmpleado().toString(),
                     esNuevo ? Auditoria.Accion.INSERT : Auditoria.Accion.UPDATE,
@@ -97,11 +97,9 @@ public class VeterinarioRestController {
         }
     }
 
-
-    // --- 8. MÉTODO 'delete' ACTUALIZADO ---
     @DeleteMapping("/{id}")
     public ResponseEntity<?> delete(@PathVariable Integer id,
-                                    @RequestHeader("Authorization") String authHeader) { // <-- AÑADIDO
+                                    @RequestHeader("Authorization") String authHeader) {
         Veterinario v = service.get(id);
         if (v == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("no existe el veterinario con id " + id);
@@ -109,9 +107,8 @@ public class VeterinarioRestController {
         try {
             service.delete(id);
 
-            // --- 9. LLAMADA AL HELPER ACTUALIZADA ---
-            registrarAuditoria(
-                    authHeader, // <-- AÑADIDO
+            auditoria.registrar(
+                    authHeader,
                     "Veterinario",
                     id.toString(),
                     Accion.DELETE,
@@ -128,7 +125,7 @@ public class VeterinarioRestController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Token no válido o ausente."));
         }
 
-        Usuario actor = getActorFromToken(authHeader); // Re-usa tu helper
+        Usuario actor = sesionActual.usuario(authHeader); // Re-usa tu helper
         if (actor == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Token inválido."));
         }
@@ -141,40 +138,4 @@ public class VeterinarioRestController {
         return ResponseEntity.ok(vetOpt.get());
     }
 
-    // --- ⬇️ HELPER A AÑADIR (si no lo tienes ya) ⬇️ ---
-    private Usuario getActorFromToken(String authHeader) {
-        try {
-            String token = authHeader.substring(7); // Quita "Bearer "
-            String login = jwtUtil.getLoginFromToken(token);
-            Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
-            return usuarioOpt.orElse(null);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    // --- 10. HELPER DE AUDITORÍA ACTUALIZADO ---
-    private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Accion accion, String comentario) {
-        Usuario actor = null;
-        try {
-            // Extraer el usuario del token
-            String token = authHeader.substring(7); // Quita "Bearer "
-            String login = jwtUtil.getLoginFromToken(token);
-            Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
-            if (usuarioOpt.isPresent()) {
-                actor = usuarioOpt.get();
-            }
-        } catch (Exception e) {
-            System.err.println("Error al obtener usuario para auditoría: " + e.getMessage());
-        }
-
-        Auditoria aud = Auditoria.builder()
-                .usuario(actor) // <-- Se asigna el actor (o null si falló)
-                .tablaAfectada(tabla)
-                .idRegistro(idRegistro)
-                .accion(accion)
-                .comentarioAuditoria(comentario)
-                .build();
-        auditoriaService.save(aud);
-    }
 }

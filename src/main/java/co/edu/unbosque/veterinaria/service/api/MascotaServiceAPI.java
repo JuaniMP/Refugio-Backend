@@ -3,7 +3,7 @@ package co.edu.unbosque.veterinaria.service.api;
 import co.edu.unbosque.veterinaria.entity.Mascota;
 import co.edu.unbosque.veterinaria.utils.GenericServiceAPI;
 
-import java.util.List; // <-- AÑADIR IMPORT
+import java.util.List;
 
 public interface MascotaServiceAPI extends GenericServiceAPI<Mascota, Integer> {
 

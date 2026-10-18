@@ -1,5 +1,7 @@
 package co.edu.unbosque.veterinaria.controller;
 
+import co.edu.unbosque.veterinaria.security.AuditoriaRegistrador;
+import co.edu.unbosque.veterinaria.security.SesionActual;
 import co.edu.unbosque.veterinaria.entity.Auditoria;
 import co.edu.unbosque.veterinaria.entity.Auditoria.Accion;
 import co.edu.unbosque.veterinaria.entity.SolicitudAdopcion;
@@ -8,7 +10,7 @@ import co.edu.unbosque.veterinaria.entity.Adoptante;
 import co.edu.unbosque.veterinaria.service.api.AuditoriaServiceAPI;
 import co.edu.unbosque.veterinaria.service.api.SolicitudAdopcionServiceAPI;
 import co.edu.unbosque.veterinaria.service.api.UsuarioServiceAPI;
-import co.edu.unbosque.veterinaria.service.api.AdoptanteServiceAPI; // <-- DEPENDENCIA AÑADIDA
+import co.edu.unbosque.veterinaria.service.api.AdoptanteServiceAPI;
 import co.edu.unbosque.veterinaria.utils.JwtUtil;
 import co.edu.unbosque.veterinaria.utils.ResourceNotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,17 +20,18 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDateTime;
 import java.util.*;
 
-@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping("/api/solicitudes")
 public class SolicitudAdopcionRestController {
+
+    @Autowired private AuditoriaRegistrador auditoria;
+    @Autowired private SesionActual sesionActual;
 
     @Autowired private SolicitudAdopcionServiceAPI service;
     @Autowired private AuditoriaServiceAPI auditoriaService;
     @Autowired private JwtUtil jwtUtil;
     @Autowired private UsuarioServiceAPI usuarioService;
-    @Autowired private AdoptanteServiceAPI adoptanteService; // <-- INYECCIÓN DE DEPENDENCIA
-
+    @Autowired private AdoptanteServiceAPI adoptanteService;
 
     // ================== CRUD BÁSICO ==================
 
@@ -64,7 +67,7 @@ public class SolicitudAdopcionRestController {
 
         SolicitudAdopcion guardada = service.save(s);
 
-        registrarAuditoria(
+        auditoria.registrar(
                 authHeader,
                 "Solicitud_Adopcion",
                 String.valueOf(guardada.getIdSolicitud()),
@@ -91,7 +94,7 @@ public class SolicitudAdopcionRestController {
         }
         service.delete(id);
 
-        registrarAuditoria(
+        auditoria.registrar(
                 authHeader,
                 "Solicitud_Adopcion",
                 String.valueOf(id),
@@ -114,7 +117,7 @@ public class SolicitudAdopcionRestController {
             resp.put("adoptanteId", aprobada.getAdoptante() != null ? aprobada.getAdoptante().getIdAdoptante() : null);
             resp.put("mascotaId", aprobada.getMascota() != null ? aprobada.getMascota().getIdMascota() : null);
 
-            registrarAuditoria(
+            auditoria.registrar(
                     authHeader,
                     "Solicitud_Adopcion",
                     String.valueOf(aprobada.getIdSolicitud()),
@@ -131,7 +134,7 @@ public class SolicitudAdopcionRestController {
     // --- ⬇️ ENDPOINT NUEVO PARA EL ADOPTANTE LOGUEADO ⬇️ ---
     @GetMapping("/by-adoptante/me")
     public ResponseEntity<?> getMisSolicitudes(@RequestHeader("Authorization") String authHeader) {
-        Usuario actor = getActorFromToken(authHeader);
+        Usuario actor = sesionActual.usuario(authHeader);
         if (actor == null || actor.getRol() != Usuario.Rol.AP) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Acceso denegado. Solo Adoptantes."));
         }
@@ -148,29 +151,4 @@ public class SolicitudAdopcionRestController {
         return ResponseEntity.ok(solicitudes);
     }
 
-
-    // --- HELPER DE AUDITORÍA ---
-    private Usuario getActorFromToken(String authHeader) {
-        try {
-            String token = authHeader.substring(7); // Quita "Bearer "
-            String login = jwtUtil.getLoginFromToken(token);
-            Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
-            return usuarioOpt.orElse(null);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Accion accion, String comentario) {
-        Usuario actor = getActorFromToken(authHeader);
-
-        Auditoria aud = Auditoria.builder()
-                .usuario(actor)
-                .tablaAfectada(tabla)
-                .idRegistro(idRegistro)
-                .accion(accion)
-                .comentarioAuditoria(comentario)
-                .build();
-        auditoriaService.save(aud);
-    }
 }

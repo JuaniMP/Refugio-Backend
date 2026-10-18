@@ -6,7 +6,7 @@ import lombok.*;
 @Entity
 @Table(name = "Telefono_Refugio")
 @Data @NoArgsConstructor @AllArgsConstructor @Builder
-@IdClass(TelefonoRefugioId.class) // <-- Esta línea usa el archivo que tú pegaste
+@IdClass(TelefonoRefugioId.class)
 public class TelefonoRefugio {
 
     @Id

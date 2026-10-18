@@ -5,7 +5,7 @@ import co.edu.unbosque.veterinaria.entity.SolicitudAdopcion;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
-import java.util.List; // <-- AÑADIR
+import java.util.List;
 
 @Repository
 public interface SolicitudAdopcionRepository extends JpaRepository<SolicitudAdopcion, Integer> {

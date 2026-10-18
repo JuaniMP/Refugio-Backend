@@ -15,7 +15,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
-import java.util.List; // <-- AÑADIR
+import java.util.List;
 
 @Service
 public class SolicitudAdopcionServiceImpl
@@ -38,7 +38,6 @@ public class SolicitudAdopcionServiceImpl
         return repo.findByAdoptante_IdAdoptante(idAdoptante);
     }
 
-    // ... (El resto del código aprobarYGenerarAdopcion sigue igual) ...
     @Override
     @Transactional
     public SolicitudAdopcion aprobarYGenerarAdopcion(Integer idSolicitud) {

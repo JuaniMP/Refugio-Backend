@@ -4,7 +4,7 @@ import co.edu.unbosque.veterinaria.entity.Mascota;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.stereotype.Repository;
 
-import java.util.List; // <-- AÑADIR IMPORT
+import java.util.List;
 
 @Repository
 public interface MascotaRepository extends CrudRepository<Mascota, Integer> {
