@@ -24,6 +24,7 @@ public class SolicitudAdopcion {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "estado", length = 12)
+    @Builder.Default
     private Estado estado = Estado.PENDIENTE;
 
     @Column(name = "fecha_solicitud")

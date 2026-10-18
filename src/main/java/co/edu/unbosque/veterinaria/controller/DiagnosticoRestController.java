@@ -1,14 +1,16 @@
 package co.edu.unbosque.veterinaria.controller;
 
+import co.edu.unbosque.veterinaria.security.AuditoriaRegistrador;
+import co.edu.unbosque.veterinaria.security.SesionActual;
 import co.edu.unbosque.veterinaria.entity.Auditoria;
 import co.edu.unbosque.veterinaria.entity.Auditoria.Accion;
 import co.edu.unbosque.veterinaria.entity.Diagnostico;
 import co.edu.unbosque.veterinaria.entity.Usuario;
-import co.edu.unbosque.veterinaria.entity.Veterinario; // <-- AÑADIDO
+import co.edu.unbosque.veterinaria.entity.Veterinario;
 import co.edu.unbosque.veterinaria.service.api.AuditoriaServiceAPI;
 import co.edu.unbosque.veterinaria.service.api.DiagnosticoServiceAPI;
 import co.edu.unbosque.veterinaria.service.api.UsuarioServiceAPI;
-import co.edu.unbosque.veterinaria.service.api.VeterinarioServiceAPI; // <-- AÑADIDO
+import co.edu.unbosque.veterinaria.service.api.VeterinarioServiceAPI;
 import co.edu.unbosque.veterinaria.utils.JwtUtil;
 import co.edu.unbosque.veterinaria.utils.ResourceNotFoundException;
 
@@ -19,13 +21,15 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map; // <-- AÑADIDO
+import java.util.Map;
 import java.util.Optional;
 
-@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping("/api/diagnosticos")
 public class DiagnosticoRestController {
+
+    @Autowired private AuditoriaRegistrador auditoria;
+    @Autowired private SesionActual sesionActual;
 
     @Autowired private DiagnosticoServiceAPI service;
     @Autowired private AuditoriaServiceAPI auditoriaService;
@@ -34,7 +38,6 @@ public class DiagnosticoRestController {
     // --- ⬇️ DEPENDENCIA NECESARIA ⬇️ ---
     @Autowired private VeterinarioServiceAPI veterinarioService;
 
-    // ... (getAll y get sin cambios) ...
     @GetMapping("/getAll")
     public List<Diagnostico> getAll() {
         return service.getAll();
@@ -46,13 +49,11 @@ public class DiagnosticoRestController {
         return ResponseEntity.ok(d);
     }
 
-
     @PostMapping("/save")
     public ResponseEntity<?> save(@RequestBody Diagnostico d,
                                   @RequestHeader("Authorization") String authHeader) {
 
-        // --- 1. OBTENER EL ACTOR Y EL EMPLEADO ASOCIADO ---
-        Usuario actor = getActorFromToken(authHeader);
+        Usuario actor = sesionActual.usuario(authHeader);
         if (actor == null || actor.getRol() != Usuario.Rol.V) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "Acceso denegado. Solo Veterinarios pueden registrar diagnósticos."));
         }
@@ -65,10 +66,8 @@ public class DiagnosticoRestController {
         // El Empleado (que es el Veterinario en este contexto)
         co.edu.unbosque.veterinaria.entity.Empleado empleado = vetOpt.get().getEmpleado();
 
-
         boolean esNuevo = (d.getIdDiagnostico() == null);
 
-        // ... (validations) ...
         if (d.getFecha() == null) d.setFecha(LocalDateTime.now());
         if (!esNuevo) {
             Diagnostico existente = service.get(d.getIdDiagnostico());
@@ -86,7 +85,6 @@ public class DiagnosticoRestController {
                     .body("el campo 'diagnostico' es obligatorio");
         }
 
-        // --- 2. ASIGNAR EL EMPLEADO ANTES DE GUARDAR (LA CLAVE) ---
         d.setEmpleado(empleado);
 
         Diagnostico guardado;
@@ -97,13 +95,11 @@ public class DiagnosticoRestController {
                     .body("no se pudo guardar: verifique las restricciones de la base de datos");
         }
 
-
-        // ... (rest of the audit code is fine) ...
         String comentario = esNuevo
                 ? "se creo diagnostico " + guardado.getIdDiagnostico() + " en historial " + guardado.getHistorial().getIdHistorial()
                 : "se actualizo diagnostico " + guardado.getIdDiagnostico() + " en historial " + guardado.getHistorial().getIdHistorial();
 
-        registrarAuditoria(
+        auditoria.registrar(
                 authHeader,
                 "Diagnostico",
                 guardado.getIdDiagnostico() != null ? guardado.getIdDiagnostico().toString() : null,
@@ -114,13 +110,12 @@ public class DiagnosticoRestController {
         return ResponseEntity.ok(guardado);
     }
 
-    // ... (Método by-historial y helper sin cambios) ...
     @GetMapping("/by-historial/{idHistorial}")
     public ResponseEntity<?> getDiagnosticosPorHistorial(
             @PathVariable Integer idHistorial,
             @RequestHeader("Authorization") String authHeader) {
 
-        if (getActorFromToken(authHeader) == null) {
+        if (sesionActual.usuario(authHeader) == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Token inválido."));
         }
 
@@ -128,27 +123,4 @@ public class DiagnosticoRestController {
         return ResponseEntity.ok(diagnosticos);
     }
 
-    private Usuario getActorFromToken(String authHeader) {
-        try {
-            String token = authHeader.substring(7); // Quita "Bearer "
-            String login = jwtUtil.getLoginFromToken(token);
-            Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
-            return usuarioOpt.orElse(null);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Accion accion, String comentario) {
-        Usuario actor = getActorFromToken(authHeader);
-
-        Auditoria aud = Auditoria.builder()
-                .usuario(actor)
-                .tablaAfectada(tabla)
-                .idRegistro(idRegistro)
-                .accion(accion)
-                .comentarioAuditoria(comentario)
-                .build();
-        auditoriaService.save(aud);
-    }
 }

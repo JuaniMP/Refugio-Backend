@@ -2,15 +2,15 @@ package co.edu.unbosque.veterinaria.repository;
 
 import co.edu.unbosque.veterinaria.entity.AsignacionCuidador;
 import co.edu.unbosque.veterinaria.entity.AsignacionCuidadorId;
-import org.springframework.data.jpa.repository.Modifying; // <-- AÑADIR
-import org.springframework.data.jpa.repository.Query; // <-- AÑADIR
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.CrudRepository;
-import org.springframework.data.repository.query.Param; // <-- AÑADIR
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.time.LocalDate; // <-- AÑADIR
-import java.util.List; // <-- AÑADIR
-import java.util.Optional; // <-- AÑADIR
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface AsignacionCuidadorRepository extends CrudRepository<AsignacionCuidador, AsignacionCuidadorId> {

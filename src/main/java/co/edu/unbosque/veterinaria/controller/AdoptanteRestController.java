@@ -1,12 +1,14 @@
 package co.edu.unbosque.veterinaria.controller;
 
+import co.edu.unbosque.veterinaria.security.SesionActual;
+import co.edu.unbosque.veterinaria.security.AuditoriaRegistrador;
 import co.edu.unbosque.veterinaria.entity.Adoptante;
 import co.edu.unbosque.veterinaria.entity.Auditoria;
 import co.edu.unbosque.veterinaria.entity.Usuario;
 import co.edu.unbosque.veterinaria.service.api.AdoptanteServiceAPI;
 import co.edu.unbosque.veterinaria.service.api.AuditoriaServiceAPI;
 import co.edu.unbosque.veterinaria.service.api.UsuarioServiceAPI;
-import co.edu.unbosque.veterinaria.utils.EmailService; // <-- 1. IMPORTAR
+import co.edu.unbosque.veterinaria.utils.EmailService;
 import co.edu.unbosque.veterinaria.utils.HashPass;
 import co.edu.unbosque.veterinaria.utils.JwtUtil;
 import co.edu.unbosque.veterinaria.utils.ResourceNotFoundException;
@@ -17,17 +19,20 @@ import org.springframework.http.*;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.Instant; // <-- 2. IMPORTAR
-import java.time.temporal.ChronoUnit; // <-- 3. IMPORTAR
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Random; // <-- 4. IMPORTAR
+import java.util.Random;
 
-@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping("/api/adoptantes")
 public class AdoptanteRestController {
+
+    @Autowired private SesionActual sesionActual;
+
+    @Autowired private AuditoriaRegistrador auditoria;
 
     @Autowired private AdoptanteServiceAPI adoptanteService;
     @Autowired private UsuarioServiceAPI usuarioService;
@@ -35,7 +40,6 @@ public class AdoptanteRestController {
     @Autowired private HashPass hashPass;
     @Autowired private JwtUtil jwtUtil;
 
-    // --- 5. INYECTAR EL SERVICIO DE EMAIL ---
     @Autowired private EmailService emailService;
 
     // =========================
@@ -104,6 +108,15 @@ public class AdoptanteRestController {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
                         .body("No existe el adoptante con id " + a.getIdAdoptante());
             }
+            // El registro es público, pero editar un perfil exige ser su dueño o administrador
+            Usuario solicitante = sesionActual.usuario(authHeader);
+            boolean esDueno = solicitante != null && existente.getUsuario() != null
+                    && solicitante.getIdUsuario().equals(existente.getUsuario().getIdUsuario());
+            boolean esAdmin = solicitante != null && solicitante.getRol() == Usuario.Rol.AD;
+            if (!esDueno && !esAdmin) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body("No puedes modificar el perfil de otro adoptante.");
+            }
         }
 
         // === 1) Validar duplicidad de documento (para nuevos o cuando cambia) ===
@@ -139,10 +152,8 @@ public class AdoptanteRestController {
             }
 
             datosUsuario.setLogin(loginNormalizado);
-            datosUsuario.setPasswordHash(hashPass.generarHash(datosUsuario, datosUsuario.getPasswordHash()));
+            datosUsuario.setPasswordHash(hashPass.hashear(datosUsuario.getPasswordHash()));
             datosUsuario.setRol(Usuario.Rol.AP);
-
-            // --- 6. CAMBIOS EN LA LÓGICA DE REGISTRO ---
 
             // a) Poner usuario como INACTIVO por defecto
             datosUsuario.setEstado(Usuario.Estado.INACTIVO);
@@ -167,7 +178,6 @@ public class AdoptanteRestController {
                 // Opcional: podrías querer devolver un error aquí si el email es crítico
                 // return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error al enviar email de verificación.");
             }
-            // --- FIN DE CAMBIOS ---
 
         } else {
             // ----- Actualización de usuario existente (solo login / email) -----
@@ -192,8 +202,8 @@ public class AdoptanteRestController {
         Adoptante guardado = adoptanteService.save(a);
 
         // === 4) Auditoría ===
-        registrarAuditoria(
-                authHeader, // <-- Se pasa el header (puede ser null si es registro)
+        auditoria.registrar(
+                authHeader,
                 "Adoptante",
                 guardado.getIdAdoptante() != null ? guardado.getIdAdoptante().toString() : null,
                 esNuevoAdoptante ? Auditoria.Accion.INSERT : Auditoria.Accion.UPDATE,
@@ -220,7 +230,7 @@ public class AdoptanteRestController {
 
             adoptanteService.delete(id);
 
-            registrarAuditoria(
+            auditoria.registrar(
                     authHeader,
                     "Adoptante",
                     id.toString(),
@@ -239,33 +249,6 @@ public class AdoptanteRestController {
     // =========================
     //       HELPERS
     // =========================
-
-    private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Auditoria.Accion accion, String comentario) {
-        Usuario actor = null;
-        try {
-            // Si el authHeader no es nulo y es válido, extrae el usuario
-            if (authHeader != null && authHeader.startsWith("Bearer ")) {
-                String token = authHeader.substring(7);
-                String login = jwtUtil.getLoginFromToken(token);
-                Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
-                if (usuarioOpt.isPresent()) {
-                    actor = usuarioOpt.get();
-                }
-            }
-            // Si authHeader es nulo (ej. en el registro), el actor simplemente queda en null
-        } catch (Exception e) {
-            System.err.println("Error al obtener usuario para auditoría: " + e.getMessage());
-        }
-
-        Auditoria aud = Auditoria.builder()
-                .usuario(actor)
-                .tablaAfectada(tabla)
-                .idRegistro(idRegistro)
-                .accion(accion)
-                .comentarioAuditoria(comentario)
-                .build();
-        auditoriaService.save(aud);
-    }
 
     private String normalizarLogin(String login) {
         return login == null ? null : login.toLowerCase().trim();

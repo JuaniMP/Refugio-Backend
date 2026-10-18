@@ -1,5 +1,7 @@
 package co.edu.unbosque.veterinaria.controller;
 
+import co.edu.unbosque.veterinaria.security.AuditoriaRegistrador;
+import co.edu.unbosque.veterinaria.security.SesionActual;
 import co.edu.unbosque.veterinaria.entity.AsignacionCuidador;
 import co.edu.unbosque.veterinaria.entity.AsignacionCuidadorId;
 import co.edu.unbosque.veterinaria.entity.Auditoria;
@@ -25,12 +27,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collectors; // <-- AÑADIR IMPORT
+import java.util.stream.Collectors;
 
-@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping("/api/asignaciones")
 public class AsignacionCuidadorRestController {
+
+    @Autowired private AuditoriaRegistrador auditoria;
+    @Autowired private SesionActual sesionActual;
 
     @Autowired private AsignacionCuidadorServiceAPI service;
     @Autowired private AuditoriaServiceAPI auditoriaService;
@@ -39,7 +43,6 @@ public class AsignacionCuidadorRestController {
 
     @Autowired private CuidadorServiceAPI cuidadorService;
     @Autowired private MascotaServiceAPI mascotaService;
-
 
     @GetMapping("/getAll")
     public List<AsignacionCuidador> getAll() {
@@ -56,7 +59,7 @@ public class AsignacionCuidadorRestController {
     @GetMapping("/mi-turno-activo")
     public ResponseEntity<?> getTurnoActivo(@RequestHeader("Authorization") String authHeader) {
         // 1. Obtener usuario (del token)
-        Usuario actor = getActorFromToken(authHeader);
+        Usuario actor = sesionActual.usuario(authHeader);
         if (actor == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Token inválido."));
         }
@@ -81,7 +84,7 @@ public class AsignacionCuidadorRestController {
     @Transactional
     @PostMapping("/comenzar-turno")
     public ResponseEntity<?> comenzarTurno(@RequestHeader("Authorization") String authHeader) {
-        Usuario actor = getActorFromToken(authHeader);
+        Usuario actor = sesionActual.usuario(authHeader);
         if (actor == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Token inválido."));
         }
@@ -128,7 +131,7 @@ public class AsignacionCuidadorRestController {
             nuevasAsignaciones.add(service.save(nueva));
         }
 
-        registrarAuditoria(authHeader, "Asignacion_Cuidador", idEmpleado.toString(), Accion.INSERT, "Inició turno. " + nuevasAsignaciones.size() + " mascotas asignadas.");
+        auditoria.registrar(authHeader, "Asignacion_Cuidador", idEmpleado.toString(), Accion.INSERT, "Inició turno. " + nuevasAsignaciones.size() + " mascotas asignadas.");
         return ResponseEntity.status(HttpStatus.CREATED).body(nuevasAsignaciones);
     }
 
@@ -139,7 +142,7 @@ public class AsignacionCuidadorRestController {
     @PostMapping("/guardar-comentario")
     public ResponseEntity<?> guardarComentario(@RequestBody Map<String, Object> payload,
                                                @RequestHeader("Authorization") String authHeader) {
-        Usuario actor = getActorFromToken(authHeader);
+        Usuario actor = sesionActual.usuario(authHeader);
         if (actor == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Token inválido."));
         }
@@ -177,7 +180,7 @@ public class AsignacionCuidadorRestController {
     @Transactional
     @PostMapping("/terminar-turno")
     public ResponseEntity<?> terminarTurno(@RequestHeader("Authorization") String authHeader) {
-        Usuario actor = getActorFromToken(authHeader);
+        Usuario actor = sesionActual.usuario(authHeader);
         if (actor == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Token inválido."));
         }
@@ -198,33 +201,8 @@ public class AsignacionCuidadorRestController {
         // ¡CORRECCIÓN! Usar ID Empleado
         service.terminarTurno(idEmpleado, LocalDate.now());
 
-        registrarAuditoria(authHeader, "Asignacion_Cuidador", idEmpleado.toString(), Accion.UPDATE, "Terminó turno. " + turnoActivo.size() + " mascotas liberadas.");
+        auditoria.registrar(authHeader, "Asignacion_Cuidador", idEmpleado.toString(), Accion.UPDATE, "Terminó turno. " + turnoActivo.size() + " mascotas liberadas.");
         return ResponseEntity.ok(Map.of("message", "Turno terminado exitosamente."));
     }
 
-
-    // --- HELPER DE AUDITORÍA ---
-    private Usuario getActorFromToken(String authHeader) {
-        try {
-            String token = authHeader.substring(7); // Quita "Bearer "
-            String login = jwtUtil.getLoginFromToken(token);
-            Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
-            return usuarioOpt.orElse(null);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Accion accion, String comentario) {
-        Usuario actor = getActorFromToken(authHeader);
-
-        Auditoria aud = Auditoria.builder()
-                .usuario(actor)
-                .tablaAfectada(tabla)
-                .idRegistro(idRegistro)
-                .accion(accion)
-                .comentarioAuditoria(comentario)
-                .build();
-        auditoriaService.save(aud);
-    }
 }

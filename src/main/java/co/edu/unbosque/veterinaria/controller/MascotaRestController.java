@@ -1,37 +1,40 @@
 package co.edu.unbosque.veterinaria.controller;
 
+import co.edu.unbosque.veterinaria.security.AuditoriaRegistrador;
+import co.edu.unbosque.veterinaria.security.SesionActual;
 import co.edu.unbosque.veterinaria.entity.Auditoria;
 import co.edu.unbosque.veterinaria.entity.Mascota;
-import co.edu.unbosque.veterinaria.entity.Usuario; // <-- 1. IMPORTAR
+import co.edu.unbosque.veterinaria.entity.Usuario;
 import co.edu.unbosque.veterinaria.service.api.AuditoriaServiceAPI;
 import co.edu.unbosque.veterinaria.service.api.MascotaServiceAPI;
-import co.edu.unbosque.veterinaria.service.api.UsuarioServiceAPI; // <-- 2. IMPORTAR
-import co.edu.unbosque.veterinaria.utils.JwtUtil; // <-- 3. IMPORTAR
+import co.edu.unbosque.veterinaria.service.api.UsuarioServiceAPI;
+import co.edu.unbosque.veterinaria.utils.JwtUtil;
 import co.edu.unbosque.veterinaria.utils.ResourceNotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.transaction.annotation.Transactional;
-import co.edu.unbosque.veterinaria.entity.Veterinario; // <-- AÑADIR
-import co.edu.unbosque.veterinaria.service.api.VeterinarioServiceAPI; // <-- AÑADIR
-import org.springframework.transaction.annotation.Transactional;import co.edu.unbosque.veterinaria.entity.Veterinario; // <-- AÑADIR
-import co.edu.unbosque.veterinaria.service.api.VeterinarioServiceAPI; // <-- AÑADIR
+import co.edu.unbosque.veterinaria.entity.Veterinario;
+import co.edu.unbosque.veterinaria.service.api.VeterinarioServiceAPI;
+import org.springframework.transaction.annotation.Transactional;import co.edu.unbosque.veterinaria.entity.Veterinario;
+import co.edu.unbosque.veterinaria.service.api.VeterinarioServiceAPI;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional; // <-- 4. IMPORTAR
+import java.util.Optional;
 
-@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping("/api/mascotas")
 public class MascotaRestController {
 
+    @Autowired private AuditoriaRegistrador auditoria;
+    @Autowired private SesionActual sesionActual;
+
     @Autowired private MascotaServiceAPI service;
     @Autowired private AuditoriaServiceAPI auditoriaService;
 
-    // --- 5. DEPENDENCIAS AÑADIDAS ---
     @Autowired private JwtUtil jwtUtil;
     @Autowired private UsuarioServiceAPI usuarioService;
 
@@ -47,11 +50,10 @@ public class MascotaRestController {
         return ResponseEntity.ok(m);
     }
 
-    // --- 6. MÉTODO 'save' ACTUALIZADO ---
     @Transactional
     @PostMapping("/save")
     public ResponseEntity<?> save(@RequestBody Mascota m,
-                                  @RequestHeader("Authorization") String authHeader) { // <-- AÑADIDO
+                                  @RequestHeader("Authorization") String authHeader) {
         boolean esNuevo = (m.getIdMascota() == null);
 
         // Validaciones que sí existen en la tabla
@@ -67,9 +69,8 @@ public class MascotaRestController {
         try {
             Mascota guardada = service.save(m);
 
-            // --- 7. LLAMADA AL HELPER ACTUALIZADA ---
-            registrarAuditoria(
-                    authHeader, // <-- AÑADIDO
+            auditoria.registrar(
+                    authHeader,
                     "Mascota",
                     guardada.getIdMascota() != null ? guardada.getIdMascota().toString() : null,
                     esNuevo ? Auditoria.Accion.INSERT : Auditoria.Accion.UPDATE,
@@ -83,11 +84,10 @@ public class MascotaRestController {
         }
     }
 
-    // --- 8. MÉTODO 'delete' ACTUALIZADO ---
     @Transactional
     @DeleteMapping("/{id}")
     public ResponseEntity<?> delete(@PathVariable Integer id,
-                                    @RequestHeader("Authorization") String authHeader) { // <-- AÑADIDO
+                                    @RequestHeader("Authorization") String authHeader) {
         Mascota m = service.get(id);
         if (m == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -95,9 +95,8 @@ public class MascotaRestController {
         }
         try {
             service.delete(id);
-            // --- 9. LLAMADA AL HELPER ACTUALIZADA ---
-            registrarAuditoria(
-                    authHeader, // <-- AÑADIDO
+            auditoria.registrar(
+                    authHeader,
                     "Mascota",
                     id.toString(),
                     Auditoria.Accion.DELETE,
@@ -116,7 +115,7 @@ public class MascotaRestController {
             @RequestHeader("Authorization") String authHeader) {
 
         // (Validación de Token simple)
-        Usuario actor = getActorFromToken(authHeader); // Re-usa tu helper de auditoría
+        Usuario actor = sesionActual.usuario(authHeader); // Re-usa tu helper de auditoría
         if (actor == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token inválido.");
         }
@@ -128,16 +127,6 @@ public class MascotaRestController {
         List<Mascota> mascotas = service.findByZonaAsignada(zona);
         return ResponseEntity.ok(mascotas);
     }
-    private Usuario getActorFromToken(String authHeader) {
-        try {
-            String token = authHeader.substring(7); // Quita "Bearer "
-            String login = jwtUtil.getLoginFromToken(token);
-            Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
-            return usuarioOpt.orElse(null);
-        } catch (Exception e) {
-            return null;
-        }
-    }
 
     @Transactional(readOnly = true) // Es solo lectura
     @GetMapping("/secure-search/{idMascota}")
@@ -145,7 +134,7 @@ public class MascotaRestController {
             @PathVariable Integer idMascota,
             @RequestHeader("Authorization") String authHeader) {
 
-        Usuario actor = getActorFromToken(authHeader);
+        Usuario actor = sesionActual.usuario(authHeader);
         if (actor == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Token inválido."));
         }
@@ -188,28 +177,4 @@ public class MascotaRestController {
         return ResponseEntity.ok(mascota);
     }
 
-    // --- 10. HELPER DE AUDITORÍA ACTUALIZADO ---
-    private void registrarAuditoria(String authHeader, String tabla, String idRegistro, Auditoria.Accion accion, String comentario) {
-        Usuario actor = null;
-        try {
-            // Extraer el usuario del token
-            String token = authHeader.substring(7); // Quita "Bearer "
-            String login = jwtUtil.getLoginFromToken(token);
-            Optional<Usuario> usuarioOpt = usuarioService.findByLogin(login);
-            if (usuarioOpt.isPresent()) {
-                actor = usuarioOpt.get();
-            }
-        } catch (Exception e) {
-            System.err.println("Error al obtener usuario para auditoría: " + e.getMessage());
-        }
-
-        Auditoria aud = Auditoria.builder()
-                .usuario(actor) // <-- Se asigna el actor (o null si falló)
-                .tablaAfectada(tabla)
-                .idRegistro(idRegistro)
-                .accion(accion)
-                .comentarioAuditoria(comentario)
-                .build();
-        auditoriaService.save(aud);
-    }
 }

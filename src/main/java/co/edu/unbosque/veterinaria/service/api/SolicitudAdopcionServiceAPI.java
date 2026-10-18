@@ -4,7 +4,7 @@ package co.edu.unbosque.veterinaria.service.api;
 import co.edu.unbosque.veterinaria.entity.SolicitudAdopcion;
 import co.edu.unbosque.veterinaria.utils.GenericServiceAPI;
 
-import java.util.List; // <-- AÑADIR
+import java.util.List;
 
 public interface SolicitudAdopcionServiceAPI extends GenericServiceAPI<SolicitudAdopcion, Integer> {
     SolicitudAdopcion aprobarYGenerarAdopcion(Integer idSolicitud);

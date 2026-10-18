@@ -1,7 +1,7 @@
 // Archivo: src/main/java/co/edu/unbosque/veterinaria/service/impl/VeterinarioServiceImpl.java
 package co.edu.unbosque.veterinaria.service.impl;
 
-import co.edu.unbosque.veterinaria.entity.Usuario; // <-- AÑADIR
+import co.edu.unbosque.veterinaria.entity.Usuario;
 import co.edu.unbosque.veterinaria.entity.Veterinario;
 import co.edu.unbosque.veterinaria.repository.VeterinarioRepository;
 import co.edu.unbosque.veterinaria.service.api.VeterinarioServiceAPI;
@@ -10,7 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.stereotype.Service;
 
-import java.util.Optional; // <-- AÑADIR
+import java.util.Optional;
 
 @Service
 public class VeterinarioServiceImpl extends GenericServiceImpl<Veterinario, Integer>
